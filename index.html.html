@@ -1,0 +1,3339 @@
+<!DOCTYPE html>
+<html lang="es" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>Fitllermo</title>
+
+  <!-- Configuración PWA nativa para iOS (Safari Add to Home Screen) -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Fitllermo" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#18181B" />
+  <link id="appleTouchIcon" rel="apple-touch-icon" href="" />
+  <link id="pwaManifest" rel="manifest" href="" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+
+  <style>
+    :root {
+      /* Paleta 2: Grafito Suizo, Marfil & Naranja Braun */
+      --bg: #18181B;
+      --card: #242429;
+      --card-alt: #1E1E23;
+      --border: #32323A;
+      --border-strong: #454550;
+      --text: #F4F4F0;
+      --muted: #9E9EA8;
+      --primary: #F4F4F0;
+      --primary-text: #18181B;
+      --accent: #EA580C;
+      --accent-soft: rgba(234, 88, 12, 0.16);
+      --accent-text: #FFFFFF;
+      --teal: #14B8A6;
+      --teal-soft: rgba(20, 184, 166, 0.14);
+      --amber: #F59E0B;
+      --diag-bg: #151518;
+      --body-sil: #2E2E36;
+      --body-stroke: #686875;
+      --font-ui: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-ui);
+      min-height: 100vh;
+      padding-top: env(safe-area-inset-top, 0px);
+      padding-bottom: calc(96px + env(safe-area-inset-bottom, 0px));
+      user-select: none;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    input, textarea {
+      user-select: text;
+      -webkit-user-select: text;
+    }
+
+    /* Hide spin buttons on numeric inputs */
+    input[type=number]::-webkit-inner-spin-button,
+    input[type=number]::-webkit-outer-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+    input[type=number] {
+      -moz-appearance: textfield;
+    }
+
+    .app-shell {
+      max-width: 500px;
+      margin: 0 auto;
+      padding: 14px 14px 32px;
+    }
+
+    /* Topbar Suizo */
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 12px;
+      margin-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .brand-wrap {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      cursor: pointer;
+    }
+    .braun-dot {
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 12px rgba(234, 88, 12, 0.55);
+    }
+    .brand-title {
+      font-size: 20px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      color: var(--text);
+    }
+    .brand-sub {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--muted);
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      margin-top: 1px;
+    }
+    .top-actions {
+      display: flex;
+      gap: 6px;
+    }
+    .chip-btn {
+      background: var(--card);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 7px 10px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .chip-btn:hover {
+      border-color: var(--border-strong);
+    }
+    .chip-btn.active {
+      background: var(--accent);
+      color: var(--accent-text);
+      border-color: var(--accent);
+    }
+
+    /* Rotación de 7 Días con Indicador de Patrón ABA / BAB */
+    .days-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+      padding: 0 2px;
+    }
+    .days-header-label {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+    }
+    .pattern-pill {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 800;
+      color: var(--accent);
+      background: var(--accent-soft);
+      border: 1px solid rgba(234, 88, 12, 0.35);
+      padding: 2px 8px;
+      border-radius: 99px;
+      cursor: pointer;
+    }
+    .days-strip {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      gap: 5px;
+      margin-bottom: 14px;
+    }
+    .day-btn {
+      background: var(--card);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      border-radius: 12px;
+      padding: 8px 2px;
+      cursor: pointer;
+      text-align: center;
+      transition: all 0.15s ease;
+      position: relative;
+    }
+    .day-btn .d-num {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 800;
+      display: block;
+    }
+    .day-btn .d-tag {
+      font-size: 9.5px;
+      font-weight: 700;
+      display: block;
+      margin-top: 2px;
+      opacity: 0.85;
+    }
+    .day-btn.active {
+      background: var(--primary);
+      color: var(--primary-text);
+      border-color: var(--primary);
+      transform: translateY(-1px);
+    }
+    .day-btn.done::after {
+      content: "";
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: var(--accent);
+    }
+
+    /* =========================================================================
+       CONSOLA UNIFICADA "EN SERIE" (1 SOLA TARJETA COHESIVA)
+       ========================================================================= */
+    .unified-console {
+      background: var(--card);
+      border: 1px solid var(--border-strong);
+      border-radius: 20px;
+      padding: 14px;
+      margin-bottom: 14px;
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+    }
+    .unified-console.resting {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 1px var(--accent), 0 8px 24px rgba(234, 88, 12, 0.18);
+    }
+
+    /* Franja Superior de la Consola Unificada */
+    .uc-topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    .uc-status-left {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      flex-wrap: wrap;
+    }
+    .uc-status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      font-weight: 800;
+      letter-spacing: 0.6px;
+      text-transform: uppercase;
+      color: var(--text);
+    }
+    .uc-status-badge .pulse-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--accent);
+    }
+    .uc-round-pill {
+      background: var(--primary);
+      color: var(--primary-text);
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 800;
+      padding: 2px 7px;
+      border-radius: 6px;
+    }
+    .uc-limb-pill {
+      background: var(--accent-soft);
+      color: #FB923C;
+      border: 1px solid rgba(234, 88, 12, 0.4);
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 800;
+      padding: 2px 8px;
+      border-radius: 6px;
+    }
+    .uc-metro-pill {
+      background: var(--card-alt);
+      color: var(--muted);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 4px 8px;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 800;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      transition: all 0.15s ease;
+    }
+    .uc-metro-pill.on {
+      background: var(--accent-soft);
+      color: var(--text);
+      border-color: var(--accent);
+    }
+    .metro-led {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--muted);
+    }
+    .uc-metro-pill.on .metro-led {
+      background: var(--accent);
+    }
+    @keyframes metro-flash {
+      0%, 100% { transform: scale(1); opacity: 0.35; }
+      35% { transform: scale(1.45); opacity: 1; }
+    }
+    .metro-led.pulsing {
+      animation: metro-flash 0.6s ease-out;
+    }
+
+    /* Cabecera del ejercicio en consola */
+    .uc-ex-header {
+      padding: 10px 0 8px;
+    }
+    .uc-ex-title {
+      font-size: 15px;
+      font-weight: 800;
+      color: var(--text);
+      line-height: 1.25;
+    }
+    .uc-ex-tempo {
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      color: var(--muted);
+      margin-top: 3px;
+    }
+
+    /* Franja Central de la Consola (2 Columnas Internas: Reps + Carga) */
+    .uc-middle-grid {
+      display: grid;
+      grid-template-columns: 1fr 1.05fr;
+      gap: 10px;
+      padding: 10px 0;
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+    }
+    @media (max-width: 370px) {
+      .uc-middle-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+    .uc-subbox {
+      background: var(--card-alt);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .uc-subbox-label {
+      font-family: var(--font-mono);
+      font-size: 9.5px;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+
+    .rep-stepper {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      margin: 2px 0;
+    }
+    .step-btn {
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      background: var(--card);
+      border: 1px solid var(--border-strong);
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 18px;
+      font-weight: 800;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .step-btn:active {
+      background: var(--primary);
+      color: var(--primary-text);
+    }
+    .big-number {
+      font-family: var(--font-mono);
+      font-size: 32px;
+      font-weight: 800;
+      line-height: 1;
+      color: var(--text);
+      text-align: center;
+    }
+    .rep-target-foot {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--muted);
+      text-align: center;
+      margin-top: 4px;
+    }
+
+    .uc-weight-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .live-weight-input {
+      width: 82px;
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid var(--border-strong);
+      border-radius: 10px;
+      padding: 6px 8px;
+      font-family: var(--font-mono);
+      font-size: 16px;
+      font-weight: 800;
+      text-align: center;
+    }
+    .live-weight-input:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+    .unit-lbl {
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      color: var(--muted);
+    }
+    .overload-badge {
+      margin-top: 6px;
+      padding: 4px 7px;
+      border-radius: 7px;
+      font-size: 10px;
+      font-weight: 700;
+      line-height: 1.25;
+    }
+    .overload-badge.up {
+      background: var(--accent-soft);
+      color: #FB923C;
+      border: 1px solid rgba(234, 88, 12, 0.35);
+    }
+    .overload-badge.steady {
+      background: var(--teal-soft);
+      color: #2DD4BF;
+      border: 1px solid rgba(20, 184, 166, 0.3);
+    }
+    .overload-badge.hold {
+      background: rgba(245, 158, 11, 0.14);
+      color: #FBBF24;
+      border: 1px solid rgba(245, 158, 11, 0.3);
+    }
+
+    /* Franja Inferior de la Consola (Selector RIR Integrado) */
+    .uc-bottom-rir {
+      padding-top: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .uc-rir-label-wrap {
+      display: flex;
+      flex-direction: column;
+    }
+    .uc-rir-title {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 800;
+      color: var(--text);
+      text-transform: uppercase;
+    }
+    .uc-rir-hint {
+      font-size: 10px;
+      color: var(--muted);
+    }
+    .rir-grid {
+      display: flex;
+      gap: 5px;
+      flex: 1;
+      max-width: 220px;
+    }
+    .rir-btn {
+      flex: 1;
+      background: var(--bg);
+      color: var(--muted);
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      padding: 7px 0;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: all 0.12s ease;
+    }
+    .rir-btn.active {
+      background: var(--accent);
+      color: var(--accent-text);
+      border-color: var(--accent);
+      box-shadow: 0 2px 10px rgba(234, 88, 12, 0.35);
+    }
+
+    /* Estado Descanso dentro de la Consola Unificada */
+    .rest-center-wrap {
+      text-align: center;
+      padding: 10px 0 6px;
+    }
+    .timer-display {
+      font-family: var(--font-mono);
+      font-size: 52px;
+      font-weight: 800;
+      color: var(--accent);
+      letter-spacing: -2px;
+      line-height: 1;
+      margin: 6px 0 10px;
+    }
+    .timer-controls {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      max-width: 320px;
+      margin: 0 auto 10px;
+    }
+    .mini-t-btn {
+      background: var(--card-alt);
+      color: var(--text);
+      border: 1px solid var(--border-strong);
+      border-radius: 10px;
+      padding: 8px;
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+    .mini-t-btn:active {
+      background: var(--primary);
+      color: var(--primary-text);
+    }
+
+    /* =========================================================================
+       CÁPSULAS DE BISERIE CON REORDENAMIENTO DINÁMICO (TERMINADOS AL FINAL)
+       ========================================================================= */
+    .biserie-capsule {
+      background: var(--card-alt);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 12px;
+      margin-bottom: 12px;
+      transition: all 0.25s ease;
+    }
+    .biserie-capsule.active-block {
+      border-color: var(--border-strong);
+    }
+    .biserie-capsule.completed-block {
+      opacity: 0.78;
+      background: #1A1A1F;
+      border-style: dashed;
+    }
+    .capsule-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 2px 4px;
+      cursor: pointer;
+    }
+    .capsule-BlockBody {
+      margin-top: 10px;
+    }
+    .biserie-capsule.collapsed .capsule-BlockBody {
+      display: none;
+    }
+    .capsule-title {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text);
+    }
+    .capsule-pill {
+      background: var(--card);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 99px;
+    }
+    .capsule-pill.done-pill {
+      background: var(--teal-soft);
+      color: #2DD4BF;
+      border-color: rgba(20, 184, 166, 0.35);
+    }
+
+    .biserie-connector {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      margin: 6px 0;
+      color: var(--muted);
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+    }
+    .biserie-connector::before,
+    .biserie-connector::after {
+      content: "";
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+    .biserie-connector span {
+      background: var(--card);
+      border: 1px solid var(--border);
+      padding: 2px 8px;
+      border-radius: 99px;
+      color: var(--accent);
+    }
+
+    /* Tarjeta de Ejercicio */
+    .ex-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 15px;
+      overflow: hidden;
+      transition: all 0.18s ease;
+    }
+    .ex-card.current {
+      border-color: var(--primary);
+      box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
+    }
+    .ex-card-head {
+      padding: 12px 13px;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 8px;
+    }
+    .ex-code {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 800;
+      padding: 2px 6px;
+      border-radius: 6px;
+      background: var(--card-alt);
+      border: 1px solid var(--border);
+      color: var(--text);
+      margin-right: 6px;
+    }
+    .ex-card.current .ex-code {
+      background: var(--primary);
+      color: var(--primary-text);
+      border-color: var(--primary);
+    }
+    .ex-name {
+      font-size: 14px;
+      font-weight: 800;
+      color: var(--text);
+    }
+    .ex-subline {
+      font-size: 11.5px;
+      color: var(--muted);
+      margin-top: 4px;
+      line-height: 1.35;
+    }
+    .ex-right-meta {
+      text-align: right;
+      flex-shrink: 0;
+    }
+    .ex-weight-pill {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 800;
+      color: var(--accent);
+      display: block;
+    }
+    .ex-reps-pill {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--muted);
+    }
+
+    .sets-strip {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      padding: 0 13px 10px;
+    }
+    .set-chip {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 7px;
+      background: var(--card-alt);
+      border: 1px solid var(--border);
+      color: var(--muted);
+    }
+    .set-chip.done {
+      background: rgba(244, 244, 240, 0.08);
+      color: var(--text);
+      border-color: var(--border-strong);
+    }
+    .set-chip.done b {
+      color: var(--accent);
+    }
+    .set-chip.active-set {
+      border-color: var(--primary);
+      color: var(--primary);
+    }
+
+    .ex-body {
+      display: none;
+      padding: 0 13px 13px;
+      border-top: 1px solid var(--border);
+    }
+    .ex-card.expanded .ex-body {
+      display: block;
+    }
+
+    .last-session-bar {
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      color: var(--muted);
+      background: var(--card-alt);
+      border: 1px solid var(--border);
+      padding: 6px 9px;
+      border-radius: 8px;
+      margin-top: 10px;
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .bio-canvas {
+      background: var(--diag-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 8px;
+      margin-top: 9px;
+    }
+    .bio-legend {
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 6px;
+      font-size: 10px;
+      color: var(--muted);
+      margin-top: 6px;
+      padding: 0 4px;
+    }
+    .dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-right: 4px;
+      vertical-align: middle;
+    }
+
+    /* =========================================================================
+       PANEL DE CONTROL (⚙️ Panel) Y TROTE URBANO MINIMALISTA
+       ========================================================================= */
+    .panel-section {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 14px;
+      margin-bottom: 12px;
+    }
+    .panel-sec-title {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 800;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      margin-bottom: 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .panel-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 0;
+      border-top: 1px solid var(--border);
+    }
+    .panel-row:first-of-type {
+      border-top: none;
+      padding-top: 2px;
+    }
+    .panel-lbl {
+      font-size: 12.5px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .panel-sub {
+      font-size: 10.5px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+    .seg-group {
+      display: flex;
+      gap: 4px;
+    }
+    .seg-btn {
+      background: var(--card-alt);
+      color: var(--muted);
+      border: 1px solid var(--border);
+      padding: 6px 10px;
+      border-radius: 8px;
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .seg-btn.active {
+      background: var(--primary);
+      color: var(--primary-text);
+      border-color: var(--primary);
+    }
+    .weight-field {
+      width: 72px;
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid var(--border-strong);
+      border-radius: 8px;
+      padding: 6px 7px;
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 800;
+      text-align: center;
+    }
+    .weight-field:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+
+    /* Vista de Trote Urbano Minimalista */
+    .run-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 16px;
+      margin-bottom: 14px;
+    }
+    .run-targets {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+    .run-stat-box {
+      background: var(--card-alt);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 9px;
+      text-align: center;
+    }
+    .run-stat-box .lbl {
+      font-size: 10px;
+      color: var(--muted);
+      display: block;
+    }
+    .run-stat-box .val {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 800;
+      color: var(--text);
+      margin-top: 2px;
+      display: block;
+    }
+    .run-inputs-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 10px;
+    }
+    .run-field-box {
+      background: var(--card-alt);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 12px;
+    }
+    .run-field-box label {
+      font-family: var(--font-mono);
+      font-size: 10.5px;
+      font-weight: 800;
+      color: var(--muted);
+      text-transform: uppercase;
+      display: block;
+      margin-bottom: 6px;
+    }
+    .run-clean-input {
+      width: 100%;
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid var(--border-strong);
+      border-radius: 10px;
+      padding: 10px;
+      font-family: var(--font-mono);
+      font-size: 20px;
+      font-weight: 800;
+      text-align: center;
+    }
+    .run-clean-input:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+    .run-pace-result {
+      background: var(--bg);
+      border: 1px solid var(--border-strong);
+      border-radius: 14px;
+      padding: 12px 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin: 12px 0;
+    }
+    .pace-big {
+      font-family: var(--font-mono);
+      font-size: 26px;
+      font-weight: 800;
+      color: var(--text);
+    }
+    .pace-status {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 800;
+      padding: 5px 10px;
+      border-radius: 8px;
+    }
+    .pace-status.ok {
+      background: var(--teal-soft);
+      color: #2DD4BF;
+    }
+    .pace-status.warn {
+      background: var(--accent-soft);
+      color: #FB923C;
+    }
+
+    /* Barra Inferior Fija */
+    .bottom-dock {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: rgba(24, 24, 27, 0.94);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-top: 1px solid var(--border);
+      padding: 10px 14px calc(14px + env(safe-area-inset-bottom, 0px));
+      z-index: 50;
+    }
+    .dock-inner {
+      max-width: 500px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: 1.75fr 1fr;
+      gap: 9px;
+    }
+    .btn-primary-action {
+      background: var(--primary);
+      color: var(--primary-text);
+      border: none;
+      border-radius: 14px;
+      padding: 14px 16px;
+      font-family: var(--font-ui);
+      font-size: 14px;
+      font-weight: 800;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+    .btn-primary-action.resting-mode {
+      background: var(--accent);
+      color: var(--accent-text);
+    }
+    .btn-secondary-action {
+      background: var(--card);
+      color: var(--text);
+      border: 1px solid var(--border-strong);
+      border-radius: 14px;
+      padding: 14px 10px;
+      font-family: var(--font-ui);
+      font-size: 12.5px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    /* Historial y Reporte Semanal */
+    .summary-card {
+      background: var(--card);
+      border: 1px solid var(--accent);
+      border-radius: 18px;
+      padding: 15px;
+      margin-bottom: 14px;
+    }
+    .summary-pre {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--text);
+      white-space: pre-wrap;
+      margin: 10px 0;
+      line-height: 1.45;
+    }
+    .toast {
+      position: fixed;
+      top: calc(16px + env(safe-area-inset-top, 0px));
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--accent);
+      color: #fff;
+      padding: 9px 16px;
+      border-radius: 99px;
+      font-family: var(--font-mono);
+      font-size: 11.5px;
+      font-weight: 800;
+      z-index: 100;
+      display: none;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="toast" class="toast">Copiado al portapapeles</div>
+
+  <div class="app-shell">
+    <!-- TOPBAR SUIZO -->
+    <header class="topbar">
+      <div class="brand-wrap" onclick="closeModalsAndGoHome()">
+        <span class="braun-dot"></span>
+        <div>
+          <div class="brand-title">Fitllermo</div>
+          <div class="brand-sub" id="brandSubLabel">Ciclo A-B-A · RIR 1–2</div>
+        </div>
+      </div>
+      <div class="top-actions">
+        <button class="chip-btn" id="panelToggleBtn" onclick="toggleControlPanel()">⚙️ Panel</button>
+        <button class="chip-btn" id="historyToggleBtn" onclick="toggleHistoryView()">📊 Historial</button>
+      </div>
+    </header>
+
+    <!-- ENCABEZADO Y TIRA DE 7 DÍAS -->
+    <div class="days-header">
+      <span class="days-header-label">Rotación Semanal Continua</span>
+      <span class="pattern-pill" id="patternIndicator" onclick="flipWeekPatternManual()" title="Toca para alternar orden A-B-A / B-A-B">
+        Orden: A-B-A ⇄
+      </span>
+    </div>
+    <nav class="days-strip" id="daysStrip"></nav>
+
+    <!-- CONTENEDOR PRINCIPAL -->
+    <main id="mainContent"></main>
+  </div>
+
+  <!-- BARRA INFERIOR FIJA -->
+  <div class="bottom-dock" id="bottomDock">
+    <div class="dock-inner">
+      <button class="btn-primary-action" id="mainActionBtn" onclick="handlePrimaryAction()">
+        ✓ Serie Completada
+      </button>
+      <button class="btn-secondary-action" onclick="resetWeekAndFlipPattern()" title="Reinicia la semana y alterna entre A-B-A y B-A-B">
+        Reiniciar ⇄
+      </button>
+    </div>
+  </div>
+
+  <!-- Input oculto para importar respaldo JSON en iOS -->
+  <input type="file" id="jsonFileInput" accept=".json,application/json" style="display:none" onchange="handleFileImport(event)" />
+
+  <script>
+    /* =========================================================================
+       0. GENERADOR AUTOMÁTICO DE ÍCONO iOS Y MANIFEST PWA (Grafito Suizo + Braun)
+       ========================================================================= */
+    function setupIOSPWA() {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = 512;
+        canvas.height = 512;
+        const ctx = canvas.getContext('2d');
+
+        ctx.fillStyle = '#18181B';
+        ctx.fillRect(0, 0, 512, 512);
+
+        ctx.fillStyle = '#242429';
+        ctx.strokeStyle = '#32323A';
+        ctx.lineWidth = 8;
+        ctx.beginPath();
+        ctx.roundRect(44, 44, 424, 424, 88);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = '#F4F4F0';
+        ctx.font = '800 250px -apple-system, BlinkMacSystemFont, sans-serif';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('F', 125, 272);
+
+        ctx.fillStyle = '#EA580C';
+        ctx.beginPath();
+        ctx.arc(356, 172, 42, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = '#EA580C';
+        ctx.beginPath();
+        ctx.roundRect(130, 368, 252, 22, 11);
+        ctx.fill();
+
+        const iconDataUrl = canvas.toDataURL('image/png');
+        const appleIcon = document.getElementById('appleTouchIcon');
+        if (appleIcon) appleIcon.href = iconDataUrl;
+
+        const manifest = {
+          name: 'Fitllermo',
+          short_name: 'Fitllermo',
+          start_url: '.',
+          display: 'standalone',
+          background_color: '#18181B',
+          theme_color: '#18181B',
+          icons: [{ src: iconDataUrl, sizes: '512x512', type: 'image/png' }]
+        };
+        const manifestBlob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
+        const manifestUrl = URL.createObjectURL(manifestBlob);
+        const manifestLink = document.getElementById('pwaManifest');
+        if (manifestLink) manifestLink.href = manifestUrl;
+      } catch (e) {}
+    }
+
+    /* =========================================================================
+       1. ESTADO GLOBAL, PATRÓN SEMANAL ALTERNADO (ABA / BAB) Y PERSISTENCIA
+       ========================================================================= */
+    const STORAGE_KEY = 'fitllermo_swiss_bento_v5';
+    const RIR_OPTIONS = ['0', '1', '2', '3+'];
+
+    let state = {
+      day: 1,
+      weekPattern: 'ABA',      // 'ABA' (D1:A, D3:B, D5:A) | 'BAB' (D1:B, D3:A, D5:B)
+      sound: true,
+      activeModal: null,       // null | 'panel' | 'history'
+      // Metrónomo de Tempo Editable (Opción A)
+      metroEnabled: false,
+      metroIntervalSec: 1.0,   // Editable (ej. 0.8s, 1.0s, 1.2s, 1.5s)
+      // Configuraciones condicionales de rutina
+      gripA: 'prono',          // 'prono' | 'supino'
+      roundsBlockA_A: 3,       // 3 o 4 vueltas en Bloque A de Rutina A
+      variantB2_B: 'diamante', // 'diamante' | 'fondos'
+      day6Mode: 'run',         // 'run' | 'rest'
+      // Cargas personalizadas y tiempos de descanso editables
+      customWeights: {},
+      restConfig: {
+        unilateral: 45,
+        blockA: 80,
+        blockB: 60,
+        transition: 90,
+        coreA: 45,
+        coreB: 60
+      },
+      // Progreso de la sesión en curso
+      stepIndex: 0,
+      isResting: false,
+      restRemaining: 0,
+      currentReps: 8,
+      currentRIR: '2',
+      expandedExId: null,
+      manualExpandedBlocks: {}, // Permite abrir un bloque completado que bajó al final
+      sessionLogs: {},          // { exId: [{ set, reps, rir, weight, leftReps, rightReps }] }
+      sessionStartTime: null,
+      completedDays: {},
+      // Trote Urbano limpio (solo km totales y minutos totales)
+      runDistKm: 5.50,
+      runTotalMin: 32,
+      runKcal: 365,
+      // Historial persistente en la app
+      history: []
+    };
+
+    let timerInterval = null;
+    let metroTimer = null;
+    let sharedAudioCtx = null;
+
+    /* Devuelve los 7 días según el patrón activo ('ABA' o 'BAB') */
+    function getCycleDays() {
+      const isABA = state.weekPattern === 'ABA';
+      return [
+        { day: 1, short: 'D1', tag: isABA ? 'Fuerza A' : 'Fuerza B', type: isABA ? 'routineA' : 'routineB' },
+        { day: 2, short: 'D2', tag: 'Trote',    type: 'run' },
+        { day: 3, short: 'D3', tag: isABA ? 'Fuerza B' : 'Fuerza A', type: isABA ? 'routineB' : 'routineA' },
+        { day: 4, short: 'D4', tag: 'Trote',    type: 'run' },
+        { day: 5, short: 'D5', tag: isABA ? 'Fuerza A' : 'Fuerza B', type: isABA ? 'routineA' : 'routineB' },
+        { day: 6, short: 'D6', tag: 'Trote/D',  type: 'run_opt' },
+        { day: 7, short: 'D7', tag: 'Descanso', type: 'rest' }
+      ];
+    }
+
+    function loadState() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem('fitllermo_swiss_bento_v2');
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          state = {
+            ...state,
+            ...parsed,
+            restConfig: { ...state.restConfig, ...(parsed.restConfig || {}) },
+            isResting: false,
+            restRemaining: 0,
+            activeModal: null
+          };
+        }
+      } catch (e) {}
+    }
+
+    function saveState() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({
+          day: state.day,
+          weekPattern: state.weekPattern,
+          sound: state.sound,
+          metroEnabled: state.metroEnabled,
+          metroIntervalSec: state.metroIntervalSec,
+          gripA: state.gripA,
+          roundsBlockA_A: state.roundsBlockA_A,
+          variantB2_B: state.variantB2_B,
+          day6Mode: state.day6Mode,
+          customWeights: state.customWeights,
+          restConfig: state.restConfig,
+          completedDays: state.completedDays,
+          runDistKm: state.runDistKm,
+          runTotalMin: state.runTotalMin,
+          runKcal: state.runKcal,
+          history: state.history
+        }));
+      } catch (e) {}
+    }
+
+    /* =========================================================================
+       2. DEFINICIÓN DE RUTINAS, BLOQUES Y EQUIPAMIENTO
+       ========================================================================= */
+    function getEffectiveWeight(weightKey, defaultWeight) {
+      if (!weightKey) return 0;
+      const custom = state.customWeights[weightKey];
+      if (custom !== undefined && custom !== null && String(custom).trim() !== '' && !isNaN(Number(custom))) {
+        return Number(custom);
+      }
+      return defaultWeight;
+    }
+
+    function getAllEquipmentCatalog() {
+      return [
+        {
+          key: 'bulgara_db',
+          name: 'Mancuerna Pesada (Rutina A · B1 Búlgara)',
+          defaultWeight: 13.6,
+          plates: '1×10 lb + 1×2,0 kg/lado = 13,6 kg (o 12,6 kg con 1,5 kg/lado)'
+        },
+        {
+          key: 'curl_db',
+          name: 'Par Mancuernas (Rutina A · B2 Curl Bíceps)',
+          defaultWeight: 7.5,
+          plates: '2×2,5 kg + 2×1,25 kg por barra = 7,5 kg por mano'
+        },
+        {
+          key: 'lat_db',
+          name: 'Par Mancuernas (Rutina A · B2 Laterales)',
+          defaultWeight: 3.0,
+          plates: '1×1,5 kg por lado = 3,0 kg (o 4,0 kg con 2,0 kg/lado)'
+        },
+        {
+          key: 'crunch_plate',
+          name: 'Disco Sobrecarga (Rutina A · C Crunches)',
+          defaultWeight: 4.5,
+          plates: '1 disco de 10 lbs (4,5 kg) o 2,5 kg al esternón'
+        },
+        {
+          key: 'kb_heavy',
+          name: 'Kettlebell Ajustable (Rutina B · RDL y Remo)',
+          defaultWeight: 16.7,
+          plates: 'Tope mango: 3×10 lbs + 1×2,5 kg + mango = 16,7 kg (o 14,2 kg)'
+        }
+      ];
+    }
+
+    function getRoutineData(routineType) {
+      const rc = state.restConfig;
+      if (routineType === 'routineA') {
+        const isProno = state.gripA === 'prono';
+        return {
+          title: 'Rutina A · Tracción V, Empuje H y Cuádriceps',
+          shortName: 'Rutina A',
+          duration: '35–40 min',
+          blocks: [
+            {
+              id: 'blockA',
+              name: 'Bloque A · Biserie Principal',
+              type: 'biserie',
+              rounds: state.roundsBlockA_A,
+              transitionRest: rc.transition,
+              exercises: [
+                {
+                  id: 'A1_dom',
+                  code: 'A1',
+                  name: isProno ? 'Dominadas estrictas (Prono/Neutro)' : 'Dominadas estrictas (Agarre Supino)',
+                  minReps: 6,
+                  maxReps: 10,
+                  defaultReps: 8,
+                  unilateral: false,
+                  weightKey: null,
+                  defaultWeight: 0,
+                  restAfter: rc.blockA,
+                  tempo: 'Bajada 2s · Subida explosiva',
+                  cue: 'Pecho busca la barra. Escápulas deprimidas antes de traccionar; baja en 2s controlados.',
+                  diagram: 'pullup',
+                  primaryMuscles: 'Dorsal ancho, Redondo mayor, Braquial',
+                  secMuscles: 'Core, Bíceps, Romboides'
+                },
+                {
+                  id: 'A2_push',
+                  code: 'A2',
+                  name: 'Flexiones profundas en manillas',
+                  minReps: 8,
+                  maxReps: 12,
+                  defaultReps: 10,
+                  unilateral: false,
+                  weightKey: null,
+                  defaultWeight: 0,
+                  restAfter: rc.blockA,
+                  tempo: '2s bajada · 1s pausa abajo',
+                  cue: 'Codos a 45° (flecha). El pecho desciende bajo el nivel de las manillas con 1s de pausa.',
+                  diagram: 'pushup_deep',
+                  primaryMuscles: 'Pectoral mayor (déficit), Deltoides ant.',
+                  secMuscles: 'Tríceps, Serrato, Core'
+                }
+              ]
+            },
+            {
+              id: 'blockB',
+              name: 'Bloque B · Biserie Unilateral + Accesorio',
+              type: 'biserie',
+              rounds: 3,
+              transitionRest: rc.blockB,
+              exercises: [
+                {
+                  id: 'B1_bulg',
+                  code: 'B1',
+                  name: 'Sentadilla Búlgara Contralateral',
+                  minReps: 8,
+                  maxReps: 10,
+                  defaultReps: 9,
+                  unilateral: true,
+                  limbLabels: ['Pierna Izquierda', 'Pierna Derecha'],
+                  restBetweenLimbs: rc.unilateral,
+                  weightKey: 'bulgara_db',
+                  defaultWeight: 13.6,
+                  restAfter: rc.blockB,
+                  tempo: 'Bajada controlada 2s',
+                  cue: 'Mancuerna en la mano contraria a la pierna adelantada. Bajada en 2s.',
+                  diagram: 'bulgarian',
+                  primaryMuscles: 'Cuádriceps unilateral, Glúteo mayor',
+                  secMuscles: 'Glúteo medio (estabilidad)'
+                },
+                isProno ? {
+                  id: 'B2_curl',
+                  code: 'B2',
+                  name: 'Curl de Bíceps Estricto con Mancuernas',
+                  minReps: 10,
+                  maxReps: 12,
+                  defaultReps: 11,
+                  unilateral: false,
+                  weightKey: 'curl_db',
+                  defaultWeight: 7.5,
+                  restAfter: rc.blockB,
+                  tempo: '1s subida · 2s bajada',
+                  cue: 'Codos fijos a las costillas. Supinación completa sin balancear el torso.',
+                  diagram: 'curl',
+                  primaryMuscles: 'Bíceps braquial, Braquial anterior',
+                  secMuscles: 'Supinador largo'
+                } : {
+                  id: 'B2_lat',
+                  code: 'B2',
+                  name: 'Elevaciones Laterales Estrictas',
+                  minReps: 12,
+                  maxReps: 15,
+                  defaultReps: 13,
+                  unilateral: false,
+                  weightKey: 'lat_db',
+                  defaultWeight: 3.0,
+                  restAfter: rc.blockB,
+                  tempo: 'Pausa breve arriba · 2s bajada',
+                  cue: 'Eleva en el plano escapular (30° adelante) hasta el hombro sin impulso.',
+                  diagram: 'lateral',
+                  primaryMuscles: 'Deltoides lateral (haz medio)',
+                  secMuscles: 'Trapecio superior'
+                }
+              ]
+            },
+            {
+              id: 'blockC',
+              name: 'Bloque C · Core Anterior',
+              type: 'single',
+              rounds: 3,
+              transitionRest: 0,
+              exercises: [
+                {
+                  id: 'C_crunch',
+                  code: 'C',
+                  name: 'Crunches con Disco al Esternón',
+                  minReps: 12,
+                  maxReps: 15,
+                  defaultReps: 14,
+                  unilateral: false,
+                  weightKey: 'crunch_plate',
+                  defaultWeight: 4.5,
+                  restAfter: rc.coreA,
+                  tempo: '2s pausa arriba · 3s bajada',
+                  cue: 'Disco firme al esternón. Pausa de 2s arriba botando aire; bajada en 3s.',
+                  diagram: 'crunch',
+                  primaryMuscles: 'Recto abdominal',
+                  secMuscles: 'Oblicuos internos'
+                }
+              ]
+            }
+          ]
+        };
+      }
+
+      // RUTINA B
+      const isDiamante = state.variantB2_B === 'diamante';
+      return {
+        title: 'Rutina B · Cadena Post., Tracción H y Empuje V',
+        shortName: 'Rutina B',
+        duration: '35–40 min',
+        blocks: [
+          {
+            id: 'blockA_B',
+            name: 'Bloque A · Biserie Cadera + Hombro Vertical',
+            type: 'biserie',
+            rounds: 3,
+            transitionRest: rc.transition,
+            exercises: [
+              {
+                id: 'B_A1_rdl',
+                code: 'A1',
+                name: 'Peso Muerto Rumano B-Stance (RDL)',
+                minReps: 8,
+                maxReps: 10,
+                defaultReps: 9,
+                unilateral: true,
+                limbLabels: ['Pierna Izquierda', 'Pierna Derecha'],
+                restBetweenLimbs: rc.unilateral,
+                weightKey: 'kb_heavy',
+                defaultWeight: 16.7,
+                restAfter: 70,
+                tempo: 'Bisagra 2s · Empuje de talón',
+                cue: 'Puntera trasera a la altura del talón delantero solo de apoyo. Cadera atrás.',
+                diagram: 'rdl_bstance',
+                primaryMuscles: 'Isquiosurales, Glúteo mayor',
+                secMuscles: 'Erectores espinales, Core'
+              },
+              {
+                id: 'B_A2_pike',
+                code: 'A2',
+                name: 'Pike Push-ups en Manillas',
+                minReps: 8,
+                maxReps: 10,
+                defaultReps: 9,
+                unilateral: false,
+                weightKey: null,
+                defaultWeight: 0,
+                restAfter: rc.blockA,
+                tempo: 'Trípode 2s bajada · Empuje vertical',
+                cue: 'Cadera alta en V invertida. La cabeza desciende delante de las manos (trípode).',
+                diagram: 'pike',
+                primaryMuscles: 'Deltoides anterior y medio, Tríceps',
+                secMuscles: 'Trapecio superior, Serrato'
+              }
+            ]
+          },
+          {
+            id: 'blockB_B',
+            name: 'Bloque B · Biserie Tracción H + Tríceps',
+            type: 'biserie',
+            rounds: 3,
+            transitionRest: rc.blockB,
+            exercises: [
+              {
+                id: 'B_B1_row',
+                code: 'B1',
+                name: 'Remo Unilateral con Kettlebell',
+                minReps: 8,
+                maxReps: 10,
+                defaultReps: 9,
+                unilateral: true,
+                limbLabels: ['Brazo Izquierdo', 'Brazo Derecho'],
+                restBetweenLimbs: rc.unilateral,
+                weightKey: 'kb_heavy',
+                defaultWeight: 16.7,
+                restAfter: rc.blockB,
+                tempo: '1s tracción a cadera · 2s bajada',
+                cue: 'Torso plano paralelo al suelo apoyado en silla. Codo directo a la cadera.',
+                diagram: 'kb_row',
+                primaryMuscles: 'Dorsal ancho, Romboides, Deltoides post.',
+                secMuscles: 'Bíceps, Core anti-rotación'
+              },
+              {
+                id: isDiamante ? 'B_B2_diam' : 'B_B2_dips',
+                code: 'B2',
+                name: isDiamante ? 'Flexiones Diamante en Manillas' : 'Fondos entre Sillas (Dips)',
+                minReps: 10,
+                maxReps: 12,
+                defaultReps: 11,
+                unilateral: false,
+                weightKey: null,
+                defaultWeight: 0,
+                restAfter: rc.blockB,
+                tempo: '2s bajada · Bloqueo arriba',
+                cue: isDiamante
+                  ? 'Codos cerrados pegados al torso. Extensión completa de codo arriba.'
+                  : 'Hombros lejos de las orejas, codos hacia atrás y extensión completa.',
+                diagram: isDiamante ? 'diamond' : 'dips',
+                primaryMuscles: 'Tríceps braquial (3 cabezas)',
+                secMuscles: 'Pectoral interno, Deltoides ant.'
+              }
+            ]
+          },
+          {
+            id: 'blockC_B',
+            name: 'Bloque C · Core y Descompresión',
+            type: 'single',
+            rounds: 3,
+            transitionRest: 0,
+            exercises: [
+              {
+                id: 'B_C_hang',
+                code: 'C',
+                name: 'Elevaciones de Rodillas Colgado en Barra',
+                minReps: 10,
+                maxReps: 12,
+                defaultReps: 11,
+                unilateral: false,
+                weightKey: null,
+                defaultWeight: 0,
+                restAfter: rc.coreB,
+                tempo: 'Basculación pélvica · 2s bajada',
+                cue: 'Colgado en barra. Subir rodillas basculando pelvis al esternón; bajada en 2s.',
+                diagram: 'hanging_knee',
+                primaryMuscles: 'Recto abdominal inferior, Oblicuos',
+                secMuscles: 'Agarre antebrazo, Dorsal'
+              }
+            ]
+          }
+        ]
+      };
+    }
+
+    function buildStepsForRoutine(routineData) {
+      const steps = [];
+      routineData.blocks.forEach((block, bIdx) => {
+        for (let r = 1; r <= block.rounds; r++) {
+          block.exercises.forEach((ex, eIdx) => {
+            const isLastExInBlock = eIdx === block.exercises.length - 1;
+            const isLastRound = r === block.rounds;
+            const isLastBlock = bIdx === routineData.blocks.length - 1;
+
+            if (ex.unilateral) {
+              steps.push({
+                blockId: block.id,
+                blockName: block.name,
+                round: r,
+                totalRounds: block.rounds,
+                ex: ex,
+                limbIndex: 0,
+                limbLabel: ex.limbLabels[0],
+                restAfter: ex.restBetweenLimbs,
+                restLabel: `Cambio de lado (${ex.restBetweenLimbs}s)`
+              });
+              let nextRest = ex.restAfter;
+              let rLabel = `Transición Biserie (${ex.restAfter}s)`;
+              if (isLastExInBlock && isLastRound) {
+                nextRest = isLastBlock ? 0 : block.transitionRest;
+                rLabel = isLastBlock ? 'Fin de sesión' : `Pausa Fin de Bloque (${nextRest}s)`;
+              }
+              steps.push({
+                blockId: block.id,
+                blockName: block.name,
+                round: r,
+                totalRounds: block.rounds,
+                ex: ex,
+                limbIndex: 1,
+                limbLabel: ex.limbLabels[1],
+                restAfter: nextRest,
+                restLabel: rLabel
+              });
+            } else {
+              let nextRest = ex.restAfter;
+              let rLabel = block.type === 'biserie' ? `Descanso Biserie (${ex.restAfter}s)` : `Descanso Serie (${ex.restAfter}s)`;
+              if (isLastExInBlock && isLastRound) {
+                nextRest = isLastBlock ? 0 : block.transitionRest;
+                rLabel = isLastBlock ? 'Fin de sesión' : `Pausa Fin de Bloque (${nextRest}s)`;
+              }
+              steps.push({
+                blockId: block.id,
+                blockName: block.name,
+                round: r,
+                totalRounds: block.rounds,
+                ex: ex,
+                limbIndex: null,
+                limbLabel: null,
+                restAfter: nextRest,
+                restLabel: rLabel
+              });
+            }
+          });
+        }
+      });
+      return steps;
+    }
+
+    /* Verifica si un bloque ya tiene todas sus series completadas */
+    function isBlockCompleted(block) {
+      return block.exercises.every(ex => {
+        const logged = state.sessionLogs[ex.id] || [];
+        if (logged.length < block.rounds) return false;
+        if (ex.unilateral) {
+          return logged.every(s => s.rightReps !== null && s.rightReps !== undefined);
+        }
+        return true;
+      });
+    }
+
+    /* =========================================================================
+       3. MOTOR DE RIR QUIRÚRGICO, PESO EN VIVO Y SOBRECARGA (OPCIÓN C)
+       ========================================================================= */
+    function onWeightInputLive(weightKey, rawValue, defaultWeight) {
+      if (!weightKey) return;
+      const cleaned = String(rawValue).trim().replace(',', '.');
+      if (cleaned === '') {
+        delete state.customWeights[weightKey];
+      } else {
+        const num = parseFloat(cleaned);
+        if (!isNaN(num) && num >= 0) {
+          state.customWeights[weightKey] = num;
+        }
+      }
+      saveState();
+
+      const effective = getEffectiveWeight(weightKey, defaultWeight);
+      document.querySelectorAll(`[data-weight-badge="${weightKey}"]`).forEach(el => {
+        el.textContent = `${effective} kg`;
+      });
+      document.querySelectorAll(`input[data-weight-input="${weightKey}"]`).forEach(inp => {
+        if (document.activeElement !== inp) {
+          inp.value = state.customWeights[weightKey] !== undefined ? state.customWeights[weightKey] : '';
+        }
+      });
+    }
+
+    function setRIR(rirVal) {
+      state.currentRIR = rirVal;
+      document.querySelectorAll('.rir-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.rir === rirVal);
+      });
+      const capEl = document.getElementById('rirLiveHint');
+      if (capEl) {
+        const hints = {
+          '0': 'Al fallo (0 en reserva)',
+          '1': 'Óptimo alto (1 en reserva)',
+          '2': 'Objetivo ideal (2 en reserva)',
+          '3+': 'Carga liviana (3+ en reserva)'
+        };
+        capEl.textContent = hints[rirVal] || '';
+      }
+    }
+
+    function adjustReps(delta) {
+      state.currentReps = Math.max(1, state.currentReps + delta);
+      const repEl = document.getElementById('liveRepDisplay');
+      if (repEl) repEl.textContent = state.currentReps;
+    }
+
+    function getLastExerciseRecord(exId) {
+      for (let i = state.history.length - 1; i >= 0; i--) {
+        const item = state.history[i];
+        if (item.exercises && item.exercises[exId]) {
+          return item.exercises[exId];
+        }
+      }
+      return null;
+    }
+
+    function getOverloadSuggestion(ex) {
+      const prev = getLastExerciseRecord(ex.id);
+      if (!prev || !prev.sets || prev.sets.length === 0) {
+        return {
+          type: 'steady',
+          label: `Meta: ${ex.minReps}–${ex.maxReps} reps @ RIR 1–2`
+        };
+      }
+
+      const parsedSets = prev.sets.map(s => ({
+        reps: typeof s.reps === 'string'
+          ? Math.min(...s.reps.split('/').map(Number).filter(n => !isNaN(n)))
+          : Number(s.reps),
+        rir: String(s.rir || '2')
+      }));
+
+      const allReachedTop = parsedSets.every(s => s.reps >= ex.maxReps);
+      const allHadReserve = parsedSets.every(s => s.rir === '2' || s.rir === '3+');
+      const countHighReserve = parsedSets.filter(s => s.rir === '3+').length;
+      const countFailureOrUnder = parsedSets.filter(s => s.rir === '0' || s.reps < ex.minReps).length;
+
+      if (allReachedTop && allHadReserve) {
+        return {
+          type: 'up',
+          label: ex.weightKey
+            ? `↑ Subir +0,5 a +1 kg (tope con RIR ≥ 2)`
+            : `↑ Sumar +1 rep o lastre (tope con RIR ≥ 2)`
+        };
+      }
+      if (countHighReserve >= 2) {
+        return {
+          type: 'up',
+          label: `↑ RIR 3+ previo · Sugerido subir carga`
+        };
+      }
+      if (countFailureOrUnder >= 2) {
+        return {
+          type: 'hold',
+          label: `⚠ RIR 0 previo · Consolidar carga`
+        };
+      }
+      return {
+        type: 'steady',
+        label: `✓ Mantener (${prev.weight || 'PC'}) · Buscar +1 rep`
+      };
+    }
+
+    /* =========================================================================
+       4. DIAGRAMAS BIOMECÁNICOS CAMINO 2
+       ========================================================================= */
+    function getBiomechSVG(diagramType) {
+      const headerDefs = `
+        <defs>
+          <pattern id="swissGrid" width="18" height="18" patternUnits="userSpaceOnUse">
+            <path d="M 18 0 L 0 0 0 18" fill="none" stroke="#282830" stroke-width="0.7"/>
+          </pattern>
+          <filter id="braunGlow" x="-20%" y="-20%" width="140%" height="140%">
+            <feGaussianBlur stdDeviation="2.2" result="blur"/>
+            <feMerge>
+              <feMergeNode in="blur"/>
+              <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+          </filter>
+        </defs>
+        <rect width="360" height="126" fill="url(#swissGrid)" rx="8"/>
+        <line x1="180" y1="10" x2="180" y2="114" stroke="#32323A" stroke-dasharray="3 3"/>
+      `;
+
+      const templates = {
+        pullup: `
+          <svg viewBox="0 0 360 126" width="100%" height="118">
+            ${headerDefs}
+            <text x="14" y="17" fill="#9E9EA8" font-size="8.5" font-family="JetBrains Mono" font-weight="700">1. SUSPENSIÓN ACTIVA</text>
+            <line x1="45" y1="24" x2="135" y2="24" stroke="#F4F4F0" stroke-width="3.5" stroke-linecap="round"/>
+            <line x1="72" y1="24" x2="80" y2="48" stroke="#686875" stroke-width="4" stroke-linecap="round"/>
+            <line x1="108" y1="24" x2="100" y2="48" stroke="#686875" stroke-width="4" stroke-linecap="round"/>
+            <circle cx="90" cy="43" r="7.5" fill="#2E2E36" stroke="#686875" stroke-width="1.3"/>
+            <path d="M77 50 L103 50 L98 82 L82 82 Z" fill="#2E2E36" stroke="#686875" stroke-width="1.2"/>
+            <path d="M78 52 L85 78 L95 78 L102 52 Z" fill="#EA580C" opacity="0.88" filter="url(#braunGlow)"/>
+            <line x1="85" y1="82" x2="85" y2="112" stroke="#2E2E36" stroke-width="6" stroke-linecap="round"/>
+            <line x1="95" y1="82" x2="95" y2="112" stroke="#2E2E36" stroke-width="6" stroke-linecap="round"/>
+
+            <text x="192" y="17" fill="#9E9EA8" font-size="8.5" font-family="JetBrains Mono" font-weight="700">2. TRACCIÓN + BAJADA 2s</text>
+            <line x1="225" y1="28" x2="315" y2="28" stroke="#F4F4F0" stroke-width="3.5" stroke-linecap="round"/>
+            <path d="M246 28 L236 46 L256 44" fill="none" stroke="#EA580C" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M294 28 L304 46 L284 44" fill="none" stroke="#EA580C" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="270" cy="25" r="7.5" fill="#2E2E36" stroke="#F4F4F0" stroke-width="1.3"/>
+            <path d="M255 36 L285 36 L279 70 L261 70 Z" fill="#2E2E36" stroke="#686875" stroke-width="1.2"/>
+            <path d="M256 38 L263 66 L277 66 L284 38 Z" fill="#EA580C" filter="url(#braunGlow)"/>
+            <rect x="262" y="56" width="16" height="12" fill="#F4F4F0" opacity="0.45" rx="2"/>
+            <line x1="265" y1="70" x2="263" y2="102" stroke="#2E2E36" stroke-width="6" stroke-linecap="round"/>
+            <line x1="275" y1="70" x2="277" y2="102" stroke="#2E2E36" stroke-width="6" stroke-linecap="round"/>
+            <text x="312" y="64" fill="#EA580C" font-size="8.5" font-family="JetBrains Mono" font-weight="800">2s ↓</text>
+          </svg>
+        `,
+        pushup_deep: `
+          <svg viewBox="0 0 360 126" width="100%" height="118">
+            ${headerDefs}
+            <line x1="12" y1="108" x2="348" y2="108" stroke="#454550" stroke-width="1.5"/>
+            <text x="14" y="17" fill="#9E9EA8" font-size="8.5" font-family="JetBrains Mono" font-weight="700">1. PLANCHA EN MANILLAS</text>
+            <path d="M126 108 L130 96 L144 96 L148 108" fill="none" stroke="#F4F4F0" stroke-width="2.5"/>
+            <path d="M28 94 L75 78 L124 58 L138 56 L124 69 L76 86 L30 102 Z" fill="#2E2E36" stroke="#686875"/>
+            <path d="M76 78 L116 63 L118 70 L78 84 Z" fill="#F4F4F0" opacity="0.4"/>
+            <path d="M116 58 C126 54,135 55,139 62 C134 68,123 68,116 63 Z" fill="#EA580C" filter="url(#braunGlow)"/>
+            <line x1="133" y1="61" x2="137" y2="96" stroke="#EA580C" stroke-width="5" stroke-linecap="round"/>
+            <circle cx="149" cy="53" r="8" fill="#2E2E36" stroke="#686875"/>
+
+            <text x="192" y="17" fill="#9E9EA8" font-size="8.5" font-family="JetBrains Mono" font-weight="700">2. DÉFICIT PROFUNDO (1s)</text>
+            <path d="M304 108 L308 96 L322 96 L326 108" fill="none" stroke="#F4F4F0" stroke-width="2.5"/>
+            <path d="M198 99 L246 92 L298 86 L314 86 L302 98 L248 99 L200 105 Z" fill="#2E2E36" stroke="#686875"/>
+            <path d="M292 85 C303 83,315 86,317 95 C309 101,297 99,291 93 Z" fill="#EA580C" filter="url(#braunGlow)"/>
+            <path d="M308 87 L295 70 L315 96" fill="none" stroke="#EA580C" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="295" cy="70" r="3" fill="#F4F4F0"/>
+            <circle cx="329" cy="87" r="8" fill="#2E2E36" stroke="#686875"/>
+            <text x="275" y="54" fill="#EA580C" font-size="8.5" font-family="JetBrains Mono" font-weight="800">45° · 1s PAUSA</text>
+          </svg>
+        `,
+        bulgarian: `
+          <svg viewBox="0 0 360 126" width="100%" height="118">
+            ${headerDefs}
+            <line x1="12" y1="110" x2="348" y2="110" stroke="#454550" stroke-width="1.5"/>
+            <rect x="24" y="84" width="26" height="26" rx="3" fill="#242429" stroke="#686875"/>
+            <rect x="204" y="84" width="26" height="26" rx="3" fill="#242429" stroke="#686875"/>
+            <text x="14" y="17" fill="#9E9EA8" font-size="8.5" font-family="JetBrains Mono" font-weight="700">1. INICIO CONTRALATERAL</text>
+            <circle cx="96" cy="30" r="7.5" fill="#2E2E36" stroke="#686875"/>
+            <path d="M88 39 L102 39 L99 72 L85 72 Z" fill="#2E2E36" stroke="#686875"/>
+            <path d="M92 72 L106 90 L106 110" fill="none" stroke="#EA580C" stroke-width="6" stroke-linecap="round"/>
+            <path d="M88 72 L68 86 L50 86" fill="none" stroke="#686875" stroke-width="4.5" stroke-linecap="round"/>
+            <rect x="84" y="68" width="16" height="8" rx="2" fill="#F4F4F0"/>
+
+            <text x="192" y="17" fill="#9E9EA8" font-size="8.5" font-family="JetBrains Mono" font-weight="700">2. DESCENSO PROFUNDO 2s</text>
+            <circle cx="282" cy="44" r="7.5" fill="#2E2E36" stroke="#686875"/>
+            <path d="M270 52 L286 52 L278 82 L262 82 Z" fill="#2E2E36" stroke="#686875"/>
+            <path d="M268 78 L296 82 L296 110" fill="none" stroke="#EA580C" stroke-width="7" stroke-linecap="round" filter="url(#braunGlow)"/>
+            <circle cx="268" cy="80" r="6" fill="#EA580C"/>
+            <path d="M264 82 L248 102 L230 86" fill="none" stroke="#686875" stroke-width="4.5" stroke-linecap="round"/>
+            <rect x="266" y="86" width="16" height="8" rx="2" fill="#F4F4F0"/>
+            <text x="306" y="70" fill="#EA580C" font-size="8.5" font-family="JetBrains Mono" font-weight="800">2s ↓</text>
+          </svg>
+        `,
+        curl: `
+          <svg viewBox="0 0 360 126" width="100%" height="118">
+            ${headerDefs}
+            <text x="14" y="17" fill="#9E9EA8" font-size="8.5" font-family="JetBrains Mono" font-weight="700">1. EXTENSIÓN SIN INERCIA</text>
+            <circle cx="88" cy="30" r="8" fill="#2E2E36" stroke="#686875"/>
+            <path d="M78 40 L98 40 L95 82 L81 82 Z" fill="#2E2E36" stroke="#686875"/>
+            <line x1="88" y1="45" x2="88" y2="70" stroke="#EA580C" stroke-width="5.5" stroke-linecap="round"/>
+            <line x1="88" y1="70" x2="92" y2="94" stroke="#F4F4F0" stroke-width="4" stroke-linecap="round"/>
+            <rect x="85" y="92" width="14" height="6" rx="2" fill="#F4F4F0"/>
+
+            <text x="192" y="17" fill="#9E9EA8" font-size="8.5" font-family="JetBrains Mono" font-weight="700">2. SUPINACIÓN + 2s BAJADA</text>
+            <circle cx="268" cy="30" r="8" fill="#2E2E36" stroke="#686875"/>
+            <path d="M258 40 L278 40 L275 82 L261 82 Z" fill="#2E2E36" stroke="#686875"/>
+            <line x1="268" y1="45" x2="268" y2="70" stroke="#EA580C" stroke-width="7.5" stroke-linecap="round" filter="url(#braunGlow)"/>
+            <line x1="268" y1="70" x2="288" y2="50" stroke="#EA580C" stroke-width="5" stroke-linecap="round"/>
+            <rect x="283" y="44" width="14" height="6" rx="2" fill="#F4F4F0"/>
+            <text x="302" y="68" fill="#EA580C" font-size="8.5" font-family="JetBrains Mono" font-weight="800">CODO FIJO</text>
+          </svg>
+        `,
+        lateral: `
+          <svg viewBox="0 0 360 126" width="100%" height="118">
+            ${headerDefs}
+            <text x="14" y="17" fill="#9E9EA8" font-size="8.5" font-family="JetBrains Mono" font-weight="700">1. INICIO PLANO ESCAPULAR</text>
+            <circle cx="90" cy="32" r="8" fill="#2E2E36" stroke="#686875"/>
+            <path d="M77 42 L103 42 L98 84 L82 84 Z" fill="#2E2E36" stroke="#686875"/>
+            <circle cx="77" cy="45" r="5" fill="#EA580C"/>
+            <circle cx="103" cy="45" r="5" fill="#EA580C"/>
+            <line x1="76" y1="46" x2="70" y2="78" stroke="#686875" stroke-width="4" stroke-linecap="round"/>
+            <line x1="104" y1="46" x2="110" y2="78" stroke="#686875" stroke-width="4" stroke-linecap="round"/>
+
+            <text x="192" y="17" fill="#9E9EA8" font-size="8.5" font-family="JetBrains Mono" font-weight="700">2. ABDUCCIÓN A 90°</text>
+            <circle cx="270" cy="32" r="8" fill="#2E2E36" stroke="#686875"/>
+            <path d="M257 42 L283 42 L278 84 L262 84 Z" fill="#2E2E36" stroke="#686875"/>
+            <circle cx="255" cy="45" r="6.5" fill="#EA580C" filter="url(#braunGlow)"/>
+            <circle cx="285" cy="45" r="6.5" fill="#EA580C" filter="url(#braunGlow)"/>
+            <line x1="255" y1="45" x2="222" y2="47" stroke="#EA580C" stroke-width="4.5" stroke-linecap="round"/>
+            <line x1="285" y1="45" x2="318" y2="47" stroke="#EA580C" stroke-width="4.5" stroke-linecap="round"/>
+            <rect x="214" y="43" width="9" height="6" fill="#F4F4F0"/>
+            <rect x="317" y="43" width="9" height="6" fill="#F4F4F0"/>
+          </svg>
+        `,
+        crunch: `
+          <svg viewBox="0 0 360 126" width="100%" height="118">
+            ${headerDefs}
+            <line x1="12" y1="106" x2="348" y2="106" stroke="#454550" stroke-width="1.5"/>
+            <text x="14" y="17" fill="#9E9EA8" font-size="8.5" font-family="JetBrains Mono" font-weight="700">1. DISCO AL ESTERNÓN</text>
+            <circle cx="42" cy="94" r="7" fill="#2E2E36" stroke="#686875"/>
+            <path d="M50 94 L98 94 L100 104 L50 104 Z" fill="#2E2E36" stroke="#686875"/>
+            <rect x="64" y="88" width="26" height="6" rx="2" fill="#EA580C"/>
+            <rect x="58" y="80" width="16" height="6" rx="2" fill="#F4F4F0"/>
+            <path d="M98 99 L122 72 L144 106" fill="none" stroke="#686875" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+
+            <text x="192" y="17" fill="#9E9EA8" font-size="8.5" font-family="JetBrains Mono" font-weight="700">2. FLEXIÓN ESPINAL (2s PAUSA)</text>
+            <circle cx="226" cy="70" r="7" fill="#2E2E36" stroke="#686875"/>
+            <path d="M232 76 Q256 96 282 98 L280 105 Q250 104 228 84 Z" fill="#2E2E36" stroke="#686875"/>
+            <path d="M244 82 Q262 93 276 95" fill="none" stroke="#EA580C" stroke-width="7" stroke-linecap="round" filter="url(#braunGlow)"/>
+            <rect x="242" y="68" width="16" height="6" rx="2" fill="#F4F4F0" transform="rotate(24 242 68)"/>
+            <path d="M280 99 L304 72 L326 106" fill="none" stroke="#686875" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        `,
+        rdl_bstance: `
+          <svg viewBox="0 0 360 126" width="100%" height="118">
+            ${headerDefs}
+            <line x1="12" y1="110" x2="348" y2="110" stroke="#454550" stroke-width="1.5"/>
+            <text x="14" y="17" fill="#9E9EA8" font-size="8.5" font-family="JetBrains Mono" font-weight="700">1. POSTURA B-STANCE</text>
+            <circle cx="94" cy="30" r="7.5" fill="#2E2E36" stroke="#686875"/>
+            <path d="M84 39 L98 39 L96 74 L82 74 Z" fill="#2E2E36" stroke="#686875"/>
+            <line x1="92" y1="74" x2="94" y2="110" stroke="#EA580C" stroke-width="6" stroke-linecap="round"/>
+            <line x1="84" y1="74" x2="72" y2="108" stroke="#686875" stroke-width="3.5" stroke-dasharray="3 2"/>
+            <circle cx="98" cy="86" r="6.5" fill="#F4F4F0"/>
+
+            <text x="192" y="17" fill="#9E9EA8" font-size="8.5" font-family="JetBrains Mono" font-weight="700">2. BISAGRA CADERA ATRÁS</text>
+            <circle cx="308" cy="54" r="7.5" fill="#2E2E36" stroke="#686875"/>
+            <path d="M254 68 L298 54 L302 64 L258 78 Z" fill="#2E2E36" stroke="#686875"/>
+            <path d="M256 76 L274 92 L276 110" fill="none" stroke="#EA580C" stroke-width="7" stroke-linecap="round" filter="url(#braunGlow)"/>
+            <circle cx="256" cy="74" r="6.5" fill="#EA580C" filter="url(#braunGlow)"/>
+            <line x1="254" y1="76" x2="238" y2="108" stroke="#686875" stroke-width="3.5" stroke-dasharray="3 2"/>
+            <line x1="292" y1="62" x2="292" y2="92" stroke="#F4F4F0" stroke-width="2.5"/>
+            <circle cx="292" cy="98" r="7" fill="#F4F4F0"/>
+            <text x="204" y="54" fill="#EA580C" font-size="8.5" font-family="JetBrains Mono" font-weight="800">← CADERA</text>
+          </svg>
+        `,
+        pike: `
+          <svg viewBox="0 0 360 126" width="100%" height="118">
+            ${headerDefs}
+            <line x1="12" y1="108" x2="348" y2="108" stroke="#454550" stroke-width="1.5"/>
+            <text x="14" y="17" fill="#9E9EA8" font-size="8.5" font-family="JetBrains Mono" font-weight="700">1. V INVERTIDA ALTA</text>
+            <path d="M122 108 L125 97 L137 97 L140 108" fill="none" stroke="#F4F4F0" stroke-width="2.5"/>
+            <line x1="38" y1="108" x2="80" y2="42" stroke="#2E2E36" stroke-width="7" stroke-linecap="round"/>
+            <line x1="80" y1="42" x2="116" y2="74" stroke="#2E2E36" stroke-width="8" stroke-linecap="round"/>
+            <line x1="116" y1="74" x2="131" y2="97" stroke="#EA580C" stroke-width="5.5" stroke-linecap="round" filter="url(#braunGlow)"/>
+            <circle cx="116" cy="74" r="5.5" fill="#EA580C"/>
+            <circle cx="122" cy="84" r="6.5" fill="#2E2E36" stroke="#686875"/>
+
+            <text x="192" y="17" fill="#9E9EA8" font-size="8.5" font-family="JetBrains Mono" font-weight="700">2. TRÍPODE (CABEZA ADELANTE)</text>
+            <path d="M294 108 L297 97 L309 97 L312 108" fill="none" stroke="#F4F4F0" stroke-width="2.5"/>
+            <line x1="214" y1="108" x2="256" y2="48" stroke="#2E2E36" stroke-width="7" stroke-linecap="round"/>
+            <line x1="256" y1="48" x2="296" y2="86" stroke="#2E2E36" stroke-width="8" stroke-linecap="round"/>
+            <path d="M296 86 L286 74 L303 97" fill="none" stroke="#EA580C" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" filter="url(#braunGlow)"/>
+            <circle cx="316" cy="95" r="6.5" fill="#2E2E36" stroke="#F4F4F0"/>
+            <text x="308" y="66" fill="#EA580C" font-size="8.5" font-family="JetBrains Mono" font-weight="800">TRÍPODE ⊿</text>
+          </svg>
+        `,
+        kb_row: `
+          <svg viewBox="0 0 360 126" width="100%" height="118">
+            ${headerDefs}
+            <line x1="12" y1="110" x2="348" y2="110" stroke="#454550" stroke-width="1.5"/>
+            <rect x="122" y="78" width="28" height="32" rx="3" fill="#242429" stroke="#686875"/>
+            <rect x="302" y="78" width="28" height="32" rx="3" fill="#242429" stroke="#686875"/>
+            <text x="14" y="17" fill="#9E9EA8" font-size="8.5" font-family="JetBrains Mono" font-weight="700">1. EXTENSIÓN ESCAPULAR</text>
+            <path d="M56 62 L108 62 L108 72 L56 72 Z" fill="#2E2E36" stroke="#686875"/>
+            <circle cx="118" cy="62" r="7" fill="#2E2E36" stroke="#686875"/>
+            <line x1="58" y1="72" x2="46" y2="110" stroke="#2E2E36" stroke-width="6" stroke-linecap="round"/>
+            <line x1="96" y1="68" x2="96" y2="96" stroke="#EA580C" stroke-width="4.5" stroke-linecap="round"/>
+            <circle cx="96" cy="102" r="6.5" fill="#F4F4F0"/>
+
+            <text x="192" y="17" fill="#9E9EA8" font-size="8.5" font-family="JetBrains Mono" font-weight="700">2. CODO A LA CADERA (1s)</text>
+            <path d="M236 62 L288 62 L288 72 L236 72 Z" fill="#EA580C" filter="url(#braunGlow)"/>
+            <circle cx="298" cy="62" r="7" fill="#2E2E36" stroke="#686875"/>
+            <line x1="238" y1="72" x2="226" y2="110" stroke="#2E2E36" stroke-width="6" stroke-linecap="round"/>
+            <path d="M276 66 L254 48 L260 74" fill="none" stroke="#F4F4F0" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="260" cy="80" r="6.5" fill="#F4F4F0"/>
+          </svg>
+        `,
+        diamond: `
+          <svg viewBox="0 0 360 126" width="100%" height="118">
+            ${headerDefs}
+            <line x1="12" y1="108" x2="348" y2="108" stroke="#454550" stroke-width="1.5"/>
+            <text x="14" y="17" fill="#9E9EA8" font-size="8.5" font-family="JetBrains Mono" font-weight="700">1. BLOQUEO DE TRÍCEPS</text>
+            <path d="M126 108 L130 97 L142 97 L146 108" fill="none" stroke="#F4F4F0" stroke-width="2.5"/>
+            <path d="M32 95 L126 58 L138 56 L124 68 L34 103 Z" fill="#2E2E36" stroke="#686875"/>
+            <line x1="132" y1="60" x2="136" y2="97" stroke="#EA580C" stroke-width="6" stroke-linecap="round" filter="url(#braunGlow)"/>
+            <circle cx="148" cy="54" r="7.5" fill="#2E2E36" stroke="#686875"/>
+
+            <text x="192" y="17" fill="#9E9EA8" font-size="8.5" font-family="JetBrains Mono" font-weight="700">2. CODOS PEGADOS AL TORSO</text>
+            <path d="M302 108 L306 97 L318 97 L322 108" fill="none" stroke="#F4F4F0" stroke-width="2.5"/>
+            <path d="M202 99 L302 86 L314 86 L300 96 L204 105 Z" fill="#2E2E36" stroke="#686875"/>
+            <path d="M306 88 L286 78 L312 97" fill="none" stroke="#EA580C" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" filter="url(#braunGlow)"/>
+            <circle cx="326" cy="86" r="7.5" fill="#2E2E36" stroke="#686875"/>
+          </svg>
+        `,
+        dips: `
+          <svg viewBox="0 0 360 126" width="100%" height="118">
+            ${headerDefs}
+            <rect x="64" y="68" width="48" height="40" rx="4" fill="#242429" stroke="#686875"/>
+            <rect x="244" y="68" width="48" height="40" rx="4" fill="#242429" stroke="#686875"/>
+            <text x="14" y="17" fill="#9E9EA8" font-size="8.5" font-family="JetBrains Mono" font-weight="700">1. EXTENSIÓN VERTICAL</text>
+            <circle cx="88" cy="28" r="7.5" fill="#2E2E36" stroke="#686875"/>
+            <path d="M78 38 L98 38 L95 72 L81 72 Z" fill="#2E2E36" stroke="#686875"/>
+            <line x1="88" y1="42" x2="88" y2="68" stroke="#EA580C" stroke-width="6" stroke-linecap="round" filter="url(#braunGlow)"/>
+
+            <text x="192" y="17" fill="#9E9EA8" font-size="8.5" font-family="JetBrains Mono" font-weight="700">2. FLEXIÓN 90° DE CODO</text>
+            <circle cx="268" cy="44" r="7.5" fill="#2E2E36" stroke="#686875"/>
+            <path d="M258 54 L278 54 L275 88 L261 88 Z" fill="#2E2E36" stroke="#686875"/>
+            <path d="M268 56 L248 56 L266 68" fill="none" stroke="#EA580C" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" filter="url(#braunGlow)"/>
+          </svg>
+        `,
+        hanging_knee: `
+          <svg viewBox="0 0 360 126" width="100%" height="118">
+            ${headerDefs}
+            <text x="14" y="17" fill="#9E9EA8" font-size="8.5" font-family="JetBrains Mono" font-weight="700">1. DESCOMPRESIÓN EN BARRA</text>
+            <line x1="55" y1="20" x2="125" y2="20" stroke="#F4F4F0" stroke-width="3.5" stroke-linecap="round"/>
+            <line x1="90" y1="20" x2="90" y2="42" stroke="#686875" stroke-width="4"/>
+            <circle cx="90" cy="40" r="7" fill="#2E2E36" stroke="#686875"/>
+            <path d="M82 48 L98 48 L96 78 L84 78 Z" fill="#2E2E36" stroke="#686875"/>
+            <line x1="90" y1="78" x2="90" y2="110" stroke="#2E2E36" stroke-width="6" stroke-linecap="round"/>
+
+            <text x="192" y="17" fill="#9E9EA8" font-size="8.5" font-family="JetBrains Mono" font-weight="700">2. BASCULACIÓN PÉLVICA</text>
+            <line x1="235" y1="20" x2="305" y2="20" stroke="#F4F4F0" stroke-width="3.5" stroke-linecap="round"/>
+            <line x1="270" y1="20" x2="270" y2="42" stroke="#686875" stroke-width="4"/>
+            <circle cx="270" cy="40" r="7" fill="#2E2E36" stroke="#686875"/>
+            <path d="M262 48 L278 48 L276 76 L264 76 Z" fill="#EA580C" filter="url(#braunGlow)"/>
+            <path d="M272 74 L298 62 L292 88" fill="none" stroke="#F4F4F0" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+            <text x="304" y="64" fill="#EA580C" font-size="8.5" font-family="JetBrains Mono" font-weight="800">PELVIS ↑</text>
+          </svg>
+        `
+      };
+
+      return templates[diagramType] || templates.pullup;
+    }
+
+    /* =========================================================================
+       5. AUDIO, METRÓNOMO EDITABLE (OPCIÓN A) Y TEMPORIZADOR DE DESCANSO
+       ========================================================================= */
+    function getAudioCtx() {
+      if (!sharedAudioCtx) {
+        const AudioClass = window.AudioContext || window.webkitAudioContext;
+        if (AudioClass) sharedAudioCtx = new AudioClass();
+      }
+      if (sharedAudioCtx && sharedAudioCtx.state === 'suspended') {
+        sharedAudioCtx.resume();
+      }
+      return sharedAudioCtx;
+    }
+
+    function playBeep(freq = 880, duration = 0.12, type = 'sine', vol = 0.16) {
+      if (!state.sound) return;
+      try {
+        const ctx = getAudioCtx();
+        if (!ctx) return;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, ctx.currentTime);
+        gain.gain.setValueAtTime(vol, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + duration);
+      } catch (e) {}
+    }
+
+    /* Pulso de Metrónomo (Opción A) */
+    function restartMetronomeLoop() {
+      clearInterval(metroTimer);
+      if (!state.metroEnabled) return;
+      const ms = Math.max(300, Math.min(5000, Math.round((Number(state.metroIntervalSec) || 1.0) * 1000)));
+      metroTimer = setInterval(() => {
+        if (!state.isResting && state.activeModal === null) {
+          playBeep(960, 0.04, 'triangle', 0.08);
+          const led = document.getElementById('liveMetroLed');
+          if (led) {
+            led.classList.remove('pulsing');
+            void led.offsetWidth;
+            led.classList.add('pulsing');
+          }
+        }
+      }, ms);
+    }
+
+    function toggleMetronome() {
+      state.metroEnabled = !state.metroEnabled;
+      saveState();
+      if (state.metroEnabled) {
+        playBeep(960, 0.04, 'triangle', 0.09);
+        restartMetronomeLoop();
+        showToast(`⏱ Metrónomo ON (${Number(state.metroIntervalSec).toFixed(1)}s)`);
+      } else {
+        clearInterval(metroTimer);
+        showToast('⏱ Metrónomo OFF');
+      }
+      render();
+    }
+
+    function updateMetroInterval(newVal) {
+      const parsed = parseFloat(String(newVal).replace(',', '.'));
+      if (!isNaN(parsed)) {
+        state.metroIntervalSec = Math.max(0.3, Math.min(5.0, Math.round(parsed * 10) / 10));
+        saveState();
+        if (state.metroEnabled) restartMetronomeLoop();
+        const inp = document.getElementById('panelMetroInput');
+        if (inp && document.activeElement !== inp) {
+          inp.value = state.metroIntervalSec.toFixed(1);
+        }
+      }
+    }
+
+    function stepMetroInterval(delta) {
+      const next = Math.max(0.3, Math.min(5.0, Math.round((Number(state.metroIntervalSec) + delta) * 10) / 10));
+      state.metroIntervalSec = next;
+      saveState();
+      if (state.metroEnabled) restartMetronomeLoop();
+      render();
+    }
+
+    function startRestTimer(seconds) {
+      clearInterval(timerInterval);
+      if (seconds <= 0) {
+        finishRestAndAdvance();
+        return;
+      }
+      state.isResting = true;
+      state.restRemaining = seconds;
+      render();
+
+      let lastWholeSec = Math.ceil(seconds);
+      const endTime = performance.now() + seconds * 1000;
+
+      timerInterval = setInterval(() => {
+        const now = performance.now();
+        const rem = Math.max(0, (endTime - now) / 1000);
+        state.restRemaining = rem;
+
+        const whole = Math.ceil(rem);
+        if (whole !== lastWholeSec && whole <= 3 && whole > 0) {
+          playBeep(660, 0.09);
+          lastWholeSec = whole;
+        }
+
+        const timerEl = document.getElementById('liveTimerVal');
+        if (timerEl) timerEl.textContent = rem.toFixed(1) + 's';
+
+        if (rem <= 0) {
+          clearInterval(timerInterval);
+          playBeep(1046, 0.24);
+          finishRestAndAdvance();
+        }
+      }, 80);
+    }
+
+    function adjustRestTime(deltaSec) {
+      if (!state.isResting) return;
+      const next = Math.max(1, state.restRemaining + deltaSec);
+      startRestTimer(next);
+    }
+
+    function skipRest() {
+      clearInterval(timerInterval);
+      finishRestAndAdvance();
+    }
+
+    function finishRestAndAdvance() {
+      state.isResting = false;
+      state.restRemaining = 0;
+      const days = getCycleDays();
+      const dayObj = days.find(d => d.day === state.day);
+      const rData = getRoutineData(dayObj.type);
+      const steps = buildStepsForRoutine(rData);
+
+      if (state.stepIndex < steps.length - 1) {
+        state.stepIndex++;
+        const nextStep = steps[state.stepIndex];
+        state.currentReps = nextStep.ex.defaultReps;
+        state.expandedExId = nextStep.ex.id;
+      } else {
+        completeStrengthWorkout(rData);
+      }
+      render();
+    }
+
+    /* =========================================================================
+       6. FLUJO DE SERIE COMPLETADA Y REINICIO CON ALTERNANCIA A-B-A ⇄ B-A-B
+       ========================================================================= */
+    function handlePrimaryAction() {
+      if (state.activeModal !== null) {
+        state.activeModal = null;
+        render();
+        return;
+      }
+
+      const days = getCycleDays();
+      const dayObj = days.find(d => d.day === state.day);
+      const effectiveType = dayObj.type === 'run_opt' ? state.day6Mode : dayObj.type;
+
+      if (effectiveType === 'run') {
+        saveRunSession();
+        return;
+      }
+      if (effectiveType === 'rest') {
+        state.completedDays[state.day] = true;
+        saveState();
+        showToast('✓ Día de descanso registrado');
+        render();
+        return;
+      }
+
+      if (state.isResting) {
+        skipRest();
+        return;
+      }
+
+      const rData = getRoutineData(effectiveType);
+      const steps = buildStepsForRoutine(rData);
+      const curStep = steps[state.stepIndex];
+      if (!curStep) return;
+
+      if (!state.sessionStartTime) state.sessionStartTime = Date.now();
+
+      const ex = curStep.ex;
+      const usedWeight = ex.weightKey ? getEffectiveWeight(ex.weightKey, ex.defaultWeight) : 0;
+
+      if (!state.sessionLogs[ex.id]) state.sessionLogs[ex.id] = [];
+
+      if (ex.unilateral) {
+        if (curStep.limbIndex === 0) {
+          state.sessionLogs[ex.id].push({
+            set: curStep.round,
+            leftReps: state.currentReps,
+            rightReps: null,
+            reps: `${state.currentReps}/-`,
+            rir: state.currentRIR,
+            weight: usedWeight
+          });
+        } else {
+          const existing = state.sessionLogs[ex.id].find(s => s.set === curStep.round);
+          if (existing) {
+            existing.rightReps = state.currentReps;
+            existing.reps = `${existing.leftReps}/${state.currentReps}`;
+            existing.rir = state.currentRIR;
+            existing.weight = usedWeight;
+          } else {
+            state.sessionLogs[ex.id].push({
+              set: curStep.round,
+              leftReps: state.currentReps,
+              rightReps: state.currentReps,
+              reps: `${state.currentReps}/${state.currentReps}`,
+              rir: state.currentRIR,
+              weight: usedWeight
+            });
+          }
+        }
+      } else {
+        state.sessionLogs[ex.id].push({
+          set: curStep.round,
+          reps: state.currentReps,
+          rir: state.currentRIR,
+          weight: usedWeight
+        });
+      }
+
+      playBeep(784, 0.12);
+
+      if (curStep.restAfter > 0) {
+        startRestTimer(curStep.restAfter);
+      } else {
+        finishRestAndAdvance();
+      }
+    }
+
+    function completeStrengthWorkout(rData) {
+      const durationMin = state.sessionStartTime
+        ? Math.max(1, Math.round((Date.now() - state.sessionStartTime) / 60000))
+        : 38;
+
+      const exSummary = {};
+      rData.blocks.forEach(b => {
+        b.exercises.forEach(ex => {
+          const sets = state.sessionLogs[ex.id] || [];
+          const w = ex.weightKey ? `${getEffectiveWeight(ex.weightKey, ex.defaultWeight)} kg` : 'PC';
+          exSummary[ex.id] = {
+            name: ex.name,
+            code: ex.code,
+            weight: w,
+            minReps: ex.minReps,
+            maxReps: ex.maxReps,
+            sets: sets
+          };
+        });
+      });
+
+      const record = {
+        id: Date.now(),
+        timestamp: Date.now(),
+        date: new Date().toLocaleDateString('es-CL', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }),
+        day: state.day,
+        weekPattern: state.weekPattern,
+        type: 'strength',
+        routineKey: rData.shortName,
+        title: rData.title,
+        durationMin,
+        exercises: exSummary
+      };
+
+      state.history.push(record);
+      state.completedDays[state.day] = true;
+      saveState();
+      showToast('✓ Entrenamiento guardado en Historial');
+    }
+
+    /* Botón inferior "Reiniciar ⇄": Reinicia la semana y alterna entre A-B-A y B-A-B */
+    function resetWeekAndFlipPattern() {
+      clearInterval(timerInterval);
+      state.weekPattern = state.weekPattern === 'ABA' ? 'BAB' : 'ABA';
+      state.completedDays = {};
+      state.day = 1;
+      state.activeModal = null;
+      resetOnlyCurrentDaySession(false);
+      saveState();
+      const label = state.weekPattern === 'ABA' ? 'A-B-A (D1:A · D3:B · D5:A)' : 'B-A-B (D1:B · D3:A · D5:B)';
+      showToast(`🔄 Semana reiniciada · Nuevo orden: ${label}`);
+      render();
+    }
+
+    function flipWeekPatternManual() {
+      state.weekPattern = state.weekPattern === 'ABA' ? 'BAB' : 'ABA';
+      resetOnlyCurrentDaySession(false);
+      saveState();
+      showToast(`⇄ Orden semanal cambiado a ${state.weekPattern === 'ABA' ? 'A-B-A' : 'B-A-B'}`);
+      render();
+    }
+
+    /* Reinicia únicamente las series del día actual sin cambiar el patrón ABA/BAB */
+    function resetOnlyCurrentDaySession(notify = true) {
+      clearInterval(timerInterval);
+      state.isResting = false;
+      state.restRemaining = 0;
+      state.stepIndex = 0;
+      state.sessionLogs = {};
+      state.manualExpandedBlocks = {};
+      state.sessionStartTime = null;
+      const days = getCycleDays();
+      const dayObj = days.find(d => d.day === state.day);
+      const effectiveType = dayObj.type === 'run_opt' ? state.day6Mode : dayObj.type;
+      if (effectiveType === 'routineA' || effectiveType === 'routineB') {
+        const rData = getRoutineData(effectiveType);
+        const steps = buildStepsForRoutine(rData);
+        if (steps[0]) {
+          state.currentReps = steps[0].ex.defaultReps;
+          state.expandedExId = steps[0].ex.id;
+        }
+      }
+      if (notify) {
+        showToast('↺ Series de hoy reiniciadas');
+        render();
+      }
+    }
+
+    /* =========================================================================
+       7. TROTE URBANO MINIMALISTA (SIN NRC, SIN BOTONES +-, SIN SEGUNDOS)
+       ========================================================================= */
+    function formatPaceFromRun(distKm, totalMin) {
+      const d = parseFloat(String(distKm).replace(',', '.'));
+      const m = parseFloat(String(totalMin).replace(',', '.'));
+      if (!d || d <= 0 || !m || m <= 0) return { text: "--'--\" /km", secPerKm: 0, optimal: false };
+      const totalSec = m * 60;
+      const secPerKm = Math.round(totalSec / d);
+      const pMin = Math.floor(secPerKm / 60);
+      const pSec = secPerKm % 60;
+      const optimal = secPerKm >= 335 && secPerKm <= 365 && d >= 4.8 && d <= 6.5;
+      return {
+        text: `${pMin}'${String(pSec).padStart(2, '0')}" /km`,
+        secPerKm,
+        optimal
+      };
+    }
+
+    function onCleanRunInput(field, rawVal) {
+      const cleaned = String(rawVal).replace(',', '.');
+      const num = parseFloat(cleaned);
+      if (field === 'dist' && !isNaN(num) && num > 0) {
+        state.runDistKm = Math.round(num * 100) / 100;
+      } else if (field === 'min' && !isNaN(num) && num > 0) {
+        state.runTotalMin = Math.round(num * 10) / 10;
+      } else if (field === 'kcal') {
+        state.runKcal = parseInt(rawVal, 10) || 0;
+      }
+      saveState();
+
+      const pace = formatPaceFromRun(state.runDistKm, state.runTotalMin);
+      const paceEl = document.getElementById('runLivePace');
+      const badgeEl = document.getElementById('runLiveStatus');
+      if (paceEl) paceEl.textContent = pace.text;
+      if (badgeEl) {
+        badgeEl.className = 'pace-status ' + (pace.optimal ? 'ok' : 'warn');
+        badgeEl.textContent = pace.optimal ? '✓ ZONA AERÓBICA (5\'40"–6\'00")' : '⚡ FUERA DE RANGO META';
+      }
+    }
+
+    function saveRunSession() {
+      const pace = formatPaceFromRun(state.runDistKm, state.runTotalMin);
+      const record = {
+        id: Date.now(),
+        timestamp: Date.now(),
+        date: new Date().toLocaleDateString('es-CL', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }),
+        day: state.day,
+        weekPattern: state.weekPattern,
+        type: 'run',
+        title: 'Trote Urbano',
+        distKm: Number(state.runDistKm).toFixed(2),
+        timeFormatted: `${state.runTotalMin} min`,
+        pace: pace.text,
+        kcal: state.runKcal
+      };
+      state.history.push(record);
+      state.completedDays[state.day] = true;
+      saveState();
+      showToast('✓ Trote Urbano guardado en Historial');
+      render();
+    }
+
+    /* =========================================================================
+       8. GENERADOR DE REPORTE SEMANAL PARA CHAT + RESPALDO JSON
+       ========================================================================= */
+    function buildSummaryText(record) {
+      if (!record) return '';
+      if (record.type === 'run') {
+        return [
+          `📋 Fitllermo — ${record.title} (${record.date})`,
+          `• Distancia: ${record.distKm} km`,
+          `• Tiempo total: ${record.timeFormatted}`,
+          `• Ritmo promedio: ${record.pace}`,
+          `• Energía activa: ${record.kcal} kcal`
+        ].join('\n');
+      }
+      const lines = [
+        `📋 Fitllermo — ${record.title} (${record.date})`,
+        `• Duración: ${record.durationMin} min · Orden semanal: ${record.weekPattern || state.weekPattern}`
+      ];
+      Object.values(record.exercises || {}).forEach(ex => {
+        const setsStr = (ex.sets || []).map(s => `${s.reps}@RIR${s.rir}`).join(', ') || 'Sin series';
+        lines.push(`• ${ex.code}. ${ex.name} (${ex.weight}): ${setsStr}`);
+      });
+      return lines.join('\n');
+    }
+
+    /* Genera el Reporte Semanal analítico listo para pegar en el chat */
+    function buildWeeklyReportForChat() {
+      const recent = state.history.slice(-10);
+      if (recent.length === 0) {
+        return '📈 REPORTE SEMANAL FITLLERMO\nAún no hay sesiones registradas en el historial.';
+      }
+
+      const strengthSessions = recent.filter(r => r.type === 'strength');
+      const runSessions = recent.filter(r => r.type === 'run');
+      const totalKm = runSessions.reduce((acc, r) => acc + (parseFloat(r.distKm) || 0), 0);
+
+      const lines = [
+        `📈 REPORTE SEMANAL DE PROGRESIÓN — FITLLERMO`,
+        `• Esquema actual: ${state.weekPattern === 'ABA' ? 'A-B-A' : 'B-A-B'} | Sesiones registradas: ${strengthSessions.length} fuerza + ${runSessions.length} trotes`,
+        `• Volumen aeróbico acumulado: ${totalKm.toFixed(2)} km (${runSessions.map(r => `${r.distKm}km @ ${r.pace}`).join(' / ') || 'Sin trotes'})`,
+        ``,
+        `🏋️‍♂️ ESTADO POR EJERCICIO Y ALERTAS DE CARGA:`
+      ];
+
+      // Agrupar última aparición de cada ejercicio
+      const latestByEx = {};
+      strengthSessions.forEach(sess => {
+        Object.entries(sess.exercises || {}).forEach(([exId, exData]) => {
+          latestByEx[exId] = { ...exData, date: sess.date };
+        });
+      });
+
+      Object.values(latestByEx).forEach(ex => {
+        const sets = ex.sets || [];
+        const setsTxt = sets.map(s => `${s.reps}@RIR${s.rir}`).join(', ');
+        let statusNote = '✓ Mantener carga y buscar +1 rep';
+
+        if (sets.length > 0 && ex.maxReps) {
+          const parsed = sets.map(s => ({
+            r: typeof s.reps === 'string' ? Math.min(...s.reps.split('/').map(Number).filter(n => !isNaN(n))) : Number(s.reps),
+            rir: String(s.rir || '2')
+          }));
+          const allTop = parsed.every(p => p.r >= ex.maxReps);
+          const allRes = parsed.every(p => p.rir === '2' || p.rir === '3+');
+          const anyFail = parsed.filter(p => p.rir === '0').length >= 2;
+          if (allTop && allRes) statusNote = '↑ SUBIR CARGA (+0.5 a +1 kg)';
+          else if (anyFail) statusNote = '⚠ Fatiga alta (RIR 0) · Consolidar peso';
+        }
+        lines.push(`- ${ex.code} ${ex.name} [${ex.weight}]: ${setsTxt || 'S/D'} → ${statusNote}`);
+      });
+
+      lines.push(``, `💬 Nota para revisión en chat: Evaluar ajustes de peso/repeticiones según este bloque.`);
+      return lines.join('\n');
+    }
+
+    function copyText(txt) {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(txt).then(() => showToast('📋 Copiado al portapapeles'));
+      } else {
+        const ta = document.createElement('textarea');
+        ta.value = txt;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        showToast('📋 Copiado al portapapeles');
+      }
+    }
+
+    function exportBackupJSON() {
+      const payload = {
+        app: 'Fitllermo',
+        exportedAt: new Date().toISOString(),
+        weekPattern: state.weekPattern,
+        customWeights: state.customWeights,
+        restConfig: state.restConfig,
+        completedDays: state.completedDays,
+        history: state.history
+      };
+      const jsonStr = JSON.stringify(payload, null, 2);
+      const blob = new Blob([jsonStr], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const dateTag = new Date().toISOString().slice(0, 10);
+      a.href = url;
+      a.download = `fitllermo-backup-${dateTag}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast('📦 Respaldo JSON descargado');
+    }
+
+    function triggerFileImport() {
+      const input = document.getElementById('jsonFileInput');
+      if (input) {
+        input.value = '';
+        input.click();
+      }
+    }
+
+    function handleFileImport(event) {
+      const file = event.target.files && event.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        try {
+          const parsed = JSON.parse(e.target.result);
+          if (parsed && Array.isArray(parsed.history)) {
+            state.history = parsed.history;
+            if (parsed.customWeights) state.customWeights = parsed.customWeights;
+            if (parsed.restConfig) state.restConfig = { ...state.restConfig, ...parsed.restConfig };
+            if (parsed.completedDays) state.completedDays = parsed.completedDays;
+            if (parsed.weekPattern) state.weekPattern = parsed.weekPattern;
+            saveState();
+            render();
+            showToast('✓ Historial y ajustes restaurados');
+          } else {
+            showToast('⚠ Archivo JSON no válido');
+          }
+        } catch (err) {
+          showToast('⚠ Error al leer el archivo JSON');
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    function showToast(msg) {
+      const t = document.getElementById('toast');
+      if (!t) return;
+      t.textContent = msg;
+      t.style.display = 'block';
+      setTimeout(() => { t.style.display = 'none'; }, 2500);
+    }
+
+    /* =========================================================================
+       9. NAVEGACIÓN Y RENDERIZADO PRINCIPAL (CONSOLA UNIFICADA + REORDENAMIENTO)
+       ========================================================================= */
+    function selectDay(d) {
+      clearInterval(timerInterval);
+      state.day = d;
+      state.activeModal = null;
+      state.isResting = false;
+      state.restRemaining = 0;
+      state.stepIndex = 0;
+      state.sessionLogs = {};
+      state.manualExpandedBlocks = {};
+      state.sessionStartTime = null;
+
+      const days = getCycleDays();
+      const dayObj = days.find(x => x.day === d);
+      const effectiveType = dayObj.type === 'run_opt' ? state.day6Mode : dayObj.type;
+      if (effectiveType === 'routineA' || effectiveType === 'routineB') {
+        const rData = getRoutineData(effectiveType);
+        const steps = buildStepsForRoutine(rData);
+        if (steps[0]) {
+          state.currentReps = steps[0].ex.defaultReps;
+          state.expandedExId = steps[0].ex.id;
+        }
+      }
+      saveState();
+      render();
+    }
+
+    function closeModalsAndGoHome() {
+      state.activeModal = null;
+      render();
+    }
+
+    function toggleControlPanel() {
+      state.activeModal = state.activeModal === 'panel' ? null : 'panel';
+      render();
+    }
+
+    function toggleHistoryView() {
+      state.activeModal = state.activeModal === 'history' ? null : 'history';
+      render();
+    }
+
+    function toggleCompletedBlockExpand(blockId) {
+      state.manualExpandedBlocks[blockId] = !state.manualExpandedBlocks[blockId];
+      render();
+    }
+
+    function renderDaysStrip() {
+      const days = getCycleDays();
+      const nav = document.getElementById('daysStrip');
+      nav.innerHTML = days.map(d => {
+        const isAct = d.day === state.day && state.activeModal === null;
+        const isDone = !!state.completedDays[d.day];
+        return `
+          <button class="day-btn ${isAct ? 'active' : ''} ${isDone ? 'done' : ''}" onclick="selectDay(${d.day})">
+            <span class="d-num">${d.short}</span>
+            <span class="d-tag">${d.tag}</span>
+          </button>
+        `;
+      }).join('');
+
+      const subLbl = document.getElementById('brandSubLabel');
+      if (subLbl) subLbl.textContent = `Ciclo ${state.weekPattern === 'ABA' ? 'A-B-A' : 'B-A-B'} · RIR 1–2`;
+
+      const patPill = document.getElementById('patternIndicator');
+      if (patPill) patPill.textContent = `Orden: ${state.weekPattern === 'ABA' ? 'A-B-A' : 'B-A-B'} ⇄`;
+
+      const pBtn = document.getElementById('panelToggleBtn');
+      if (pBtn) pBtn.classList.toggle('active', state.activeModal === 'panel');
+
+      const hBtn = document.getElementById('historyToggleBtn');
+      if (hBtn) hBtn.classList.toggle('active', state.activeModal === 'history');
+    }
+
+    function render() {
+      renderDaysStrip();
+      const main = document.getElementById('mainContent');
+      const mainBtn = document.getElementById('mainActionBtn');
+
+      if (state.activeModal === 'panel') {
+        mainBtn.className = 'btn-primary-action';
+        mainBtn.innerHTML = '✓ Volver al Entrenamiento';
+        renderControlPanelView(main);
+        return;
+      }
+
+      if (state.activeModal === 'history') {
+        mainBtn.className = 'btn-primary-action';
+        mainBtn.innerHTML = '✓ Volver al Entrenamiento';
+        renderHistoryView(main);
+        return;
+      }
+
+      const days = getCycleDays();
+      const dayObj = days.find(d => d.day === state.day);
+      const effectiveType = dayObj.type === 'run_opt' ? state.day6Mode : dayObj.type;
+
+      if (effectiveType === 'run') {
+        mainBtn.className = 'btn-primary-action';
+        mainBtn.innerHTML = '✓ Guardar Trote Urbano';
+        renderRunView(main, dayObj.type === 'run_opt');
+        return;
+      }
+
+      if (effectiveType === 'rest') {
+        mainBtn.className = 'btn-primary-action';
+        mainBtn.innerHTML = '✓ Marcar Descanso Completado';
+        renderRestView(main, dayObj.type === 'run_opt');
+        return;
+      }
+
+      // Vista de Fuerza (Rutina A o Rutina B)
+      const rData = getRoutineData(effectiveType);
+      const steps = buildStepsForRoutine(rData);
+      const curStep = steps[state.stepIndex] || steps[steps.length - 1];
+      const curEx = curStep.ex;
+      const effWeight = curEx.weightKey ? getEffectiveWeight(curEx.weightKey, curEx.defaultWeight) : 0;
+      const overload = getOverloadSuggestion(curEx);
+
+      if (state.isResting) {
+        mainBtn.className = 'btn-primary-action resting-mode';
+        mainBtn.innerHTML = '⏭ Saltar Descanso y Seguir';
+      } else {
+        mainBtn.className = 'btn-primary-action';
+        mainBtn.innerHTML = `✓ Serie Completada (${curStep.restAfter > 0 ? curStep.restAfter + 's' : 'Fin'})`;
+      }
+
+      // =======================================================================
+      // 1. CONSOLA UNIFICADA "EN SERIE" (1 SOLA TARJETA COHESIVA)
+      // =======================================================================
+      let unifiedConsoleHTML = '';
+      if (state.isResting) {
+        const nextStep = steps[state.stepIndex + 1];
+        unifiedConsoleHTML = `
+          <section class="unified-console resting">
+            <div class="uc-topbar">
+              <div class="uc-status-left">
+                <span class="uc-status-badge"><span class="pulse-dot"></span> DESCANSANDO</span>
+                <span class="uc-round-pill">Paso ${state.stepIndex + 1}/${steps.length}</span>
+              </div>
+              <span style="font-family:var(--font-mono);font-size:10.5px;color:var(--accent);font-weight:800">
+                ${curStep.restLabel}
+              </span>
+            </div>
+
+            <div class="rest-center-wrap">
+              <div class="timer-display" id="liveTimerVal">${state.restRemaining.toFixed(1)}s</div>
+              <div class="timer-controls">
+                <button class="mini-t-btn" onclick="adjustRestTime(-15)">-15s</button>
+                <button class="mini-t-btn" onclick="adjustRestTime(15)">+15s</button>
+                <button class="mini-t-btn" onclick="skipRest()">Saltar ⏭</button>
+              </div>
+            </div>
+
+            <div class="uc-bottom-rir" style="border-top:1px solid var(--border);justify-content:space-between">
+              <span style="font-family:var(--font-mono);font-size:10.5px;color:var(--muted)">
+                SIGUIENTE: <strong style="color:var(--text)">${nextStep ? `${nextStep.ex.code} · ${nextStep.ex.name}` : 'Fin de la rutina'}</strong>
+              </span>
+              ${nextStep && nextStep.limbLabel ? `<span class="uc-limb-pill">${nextStep.limbLabel}</span>` : ''}
+            </div>
+          </section>
+        `;
+      } else {
+        const curCustomW = curEx.weightKey && state.customWeights[curEx.weightKey] !== undefined
+          ? state.customWeights[curEx.weightKey]
+          : '';
+
+        unifiedConsoleHTML = `
+          <section class="unified-console">
+            <!-- Franja Superior: Estado + Vuelta + Extremidad + Metrónomo -->
+            <div class="uc-topbar">
+              <div class="uc-status-left">
+                <span class="uc-status-badge"><span class="pulse-dot"></span> EN SERIE · ${curEx.code}</span>
+                <span class="uc-round-pill">Vuelta ${curStep.round}/${curStep.totalRounds}</span>
+                ${curStep.limbLabel ? `<span class="uc-limb-pill">🦵/💪 ${curStep.limbLabel}</span>` : ''}
+              </div>
+              <button type="button" class="uc-metro-pill ${state.metroEnabled ? 'on' : ''}" onclick="toggleMetronome()" title="Activar/Desactivar pulso de Tempo">
+                <span id="liveMetroLed" class="metro-led"></span>
+                <span>⏱ ${Number(state.metroIntervalSec).toFixed(1)}s</span>
+              </button>
+            </div>
+
+            <!-- Nombre del Ejercicio y Tempo -->
+            <div class="uc-ex-header">
+              <div class="uc-ex-title">${curEx.name}</div>
+              <div class="uc-ex-tempo">Tempo: ${curEx.tempo}</div>
+            </div>
+
+            <!-- Franja Central: Repeticiones (Izq) + Carga y Sobrecarga (Der) -->
+            <div class="uc-middle-grid">
+              <div class="uc-subbox">
+                <div class="uc-subbox-label">
+                  <span>REPETICIONES</span>
+                  <span>META ${curEx.minReps}–${curEx.maxReps}</span>
+                </div>
+                <div class="rep-stepper">
+                  <button type="button" class="step-btn" onclick="adjustReps(-1)">−</button>
+                  <div class="big-number" id="liveRepDisplay">${state.currentReps}</div>
+                  <button type="button" class="step-btn" onclick="adjustReps(1)">+</button>
+                </div>
+                <div class="rep-target-foot">${curEx.unilateral ? 'Por lado' : 'Serie efectiva'}</div>
+              </div>
+
+              <div class="uc-subbox">
+                <div>
+                  <div class="uc-subbox-label">
+                    <span>CARGA ACTIVA</span>
+                    <span data-weight-badge="${curEx.weightKey || 'bw'}" style="color:var(--accent);font-weight:800">
+                      ${curEx.weightKey ? effWeight + ' kg' : 'Corporal'}
+                    </span>
+                  </div>
+                  ${curEx.weightKey ? `
+                    <div class="uc-weight-row">
+                      <input
+                        type="number"
+                        step="0.1"
+                        inputmode="decimal"
+                        class="live-weight-input"
+                        data-weight-input="${curEx.weightKey}"
+                        placeholder="${curEx.defaultWeight}"
+                        value="${curCustomW}"
+                        oninput="onWeightInputLive('${curEx.weightKey}', this.value, ${curEx.defaultWeight})"
+                      />
+                      <span class="unit-lbl">kg (Sug: ${curEx.defaultWeight})</span>
+                    </div>
+                  ` : `
+                    <div style="font-family:var(--font-mono);font-size:12px;font-weight:800;color:var(--text);padding:6px 0">
+                      Peso Corporal / Barra
+                    </div>
+                  `}
+                </div>
+                <div class="overload-badge ${overload.type}">
+                  ${overload.label}
+                </div>
+              </div>
+            </div>
+
+            <!-- Franja Inferior: Esfuerzo RIR Integrado (Sin recargar DOM) -->
+            <div class="uc-bottom-rir">
+              <div class="uc-rir-label-wrap">
+                <span class="uc-rir-title">Esfuerzo RIR (Meta 1–2)</span>
+                <span class="uc-rir-hint" id="rirLiveHint">Objetivo ideal (2 en reserva)</span>
+              </div>
+              <div class="rir-grid">
+                ${RIR_OPTIONS.map(r => `
+                  <button type="button" class="rir-btn ${state.currentRIR === r ? 'active' : ''}" data-rir="${r}" onclick="setRIR('${r}')">
+                    ${r}
+                  </button>
+                `).join('')}
+              </div>
+            </div>
+          </section>
+        `;
+      }
+
+      // =======================================================================
+      // 2. REORDENAMIENTO DINÁMICO DE BLOQUES (ACTIVO SUBE, TERMINADO BAJA)
+      // =======================================================================
+      const sortedBlocks = [...rData.blocks].sort((a, b) => {
+        const aDone = isBlockCompleted(a);
+        const bDone = isBlockCompleted(b);
+        if (aDone !== bDone) return aDone ? 1 : -1; // Los completados bajan al final
+        return 0;
+      });
+
+      const capsulesHTML = sortedBlocks.map(block => {
+        const blockDone = isBlockCompleted(block);
+        const isBlockActive = curStep.blockId === block.id && !blockDone;
+        const isCollapsed = blockDone && !state.manualExpandedBlocks[block.id];
+
+        const cardsHTML = block.exercises.map((ex, idx) => {
+          const isCurEx = curEx.id === ex.id && !blockDone;
+          const isExpanded = state.expandedExId === ex.id;
+          const exW = ex.weightKey ? `${getEffectiveWeight(ex.weightKey, ex.defaultWeight)} kg` : 'Peso Corp.';
+          const loggedSets = state.sessionLogs[ex.id] || [];
+          const prevRec = getLastExerciseRecord(ex.id);
+
+          const setsChips = [];
+          for (let s = 1; s <= block.rounds; s++) {
+            const found = loggedSets.find(x => x.set === s);
+            if (found) {
+              setsChips.push(`<span class="set-chip done">S${s}: ${found.reps} <b>@RIR${found.rir}</b></span>`);
+            } else if (isCurEx && curStep.round === s) {
+              setsChips.push(`<span class="set-chip active-set">S${s}: En curso</span>`);
+            } else {
+              setsChips.push(`<span class="set-chip">S${s}: ${ex.minReps}–${ex.maxReps}</span>`);
+            }
+          }
+
+          const prevText = prevRec && prevRec.sets && prevRec.sets.length
+            ? prevRec.sets.map(s => `${s.reps}@RIR${s.rir}`).join(', ') + ` (${prevRec.weight})`
+            : 'Sin registro previo';
+
+          const cardMarkup = `
+            <div class="ex-card ${isCurEx ? 'current' : ''} ${isExpanded ? 'expanded' : ''}">
+              <div class="ex-card-head" onclick="toggleExpandEx('${ex.id}')">
+                <div>
+                  <div>
+                    <span class="ex-code">${ex.code}</span>
+                    <span class="ex-name">${ex.name}</span>
+                  </div>
+                  <div class="ex-subline">${ex.cue}</div>
+                </div>
+                <div class="ex-right-meta">
+                  <span class="ex-weight-pill" data-weight-badge="${ex.weightKey || ''}">${exW}</span>
+                  <span class="ex-reps-pill">${ex.minReps}–${ex.maxReps} reps ${ex.unilateral ? '/ lado' : ''}</span>
+                </div>
+              </div>
+
+              <div class="sets-strip">
+                ${setsChips.join('')}
+              </div>
+
+              <div class="ex-body">
+                <div class="last-session-bar">
+                  <span>📌 Última vez:</span>
+                  <strong>${prevText}</strong>
+                </div>
+                <div class="bio-canvas">
+                  ${getBiomechSVG(ex.diagram)}
+                  <div class="bio-legend">
+                    <span><i class="dot" style="background:#EA580C"></i><strong>Primario:</strong> ${ex.primaryMuscles}</span>
+                    <span><i class="dot" style="background:#F4F4F0"></i><strong>Estabilizador:</strong> ${ex.secMuscles}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          `;
+
+          if (block.type === 'biserie' && idx === 0 && block.exercises.length > 1) {
+            return cardMarkup + `
+              <div class="biserie-connector">
+                <span>⇄ ALTERNAR BISERIE (${ex.restAfter}s descanso)</span>
+              </div>
+            `;
+          }
+          return cardMarkup;
+        }).join('');
+
+        return `
+          <section class="biserie-capsule ${isBlockActive ? 'active-block' : ''} ${blockDone ? 'completed-block' : ''} ${isCollapsed ? 'collapsed' : ''}">
+            <div class="capsule-header" onclick="${blockDone ? `toggleCompletedBlockExpand('${block.id}')` : ''}">
+              <div class="capsule-title">
+                <span>${blockDone ? '✓ ' + block.name + ' (Completado)' : block.name}</span>
+              </div>
+              <span class="capsule-pill ${blockDone ? 'done-pill' : ''}">
+                ${blockDone ? (isCollapsed ? '▼ Ver detalle' : '▲ Ocultar') : `${block.rounds} vueltas`}
+              </span>
+            </div>
+            <div class="capsule-BlockBody">
+              ${cardsHTML}
+            </div>
+          </section>
+        `;
+      }).join('');
+
+      const latestToday = [...state.history].reverse().find(h => h.day === state.day && h.type === 'strength');
+      const summaryHTML = latestToday ? `
+        <div class="summary-card">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <strong style="font-size:12.5px;color:var(--accent)">✓ SESIÓN GUARDADA HOY</strong>
+            <button class="chip-btn active" onclick="copyText(buildSummaryText(state.history.find(x=>x.id===${latestToday.id})))">📋 Copiar</button>
+          </div>
+          <div class="summary-pre">${buildSummaryText(latestToday)}</div>
+        </div>
+      ` : '';
+
+      main.innerHTML = `
+        ${unifiedConsoleHTML}
+        ${summaryHTML}
+        ${capsulesHTML}
+      `;
+    }
+
+    /* =========================================================================
+       10. VISTA PANEL DE CONTROL (⚙️ Panel: Metrónomo, Rutina, Cargas y Pausas)
+       ========================================================================= */
+    function renderControlPanelView(container) {
+      const equipCatalog = getAllEquipmentCatalog();
+      const equipInputsHTML = equipCatalog.map(eq => {
+        const customVal = state.customWeights[eq.key] !== undefined ? state.customWeights[eq.key] : '';
+        const effVal = getEffectiveWeight(eq.key, eq.defaultWeight);
+        return `
+          <div class="panel-row">
+            <div style="flex:1">
+              <div class="panel-lbl">${eq.name} · <span style="color:var(--accent)" data-weight-badge="${eq.key}">${effVal} kg</span></div>
+              <div class="panel-sub">${eq.plates}</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:5px">
+              <input
+                type="number"
+                step="0.1"
+                inputmode="decimal"
+                class="weight-field"
+                data-weight-input="${eq.key}"
+                placeholder="${eq.defaultWeight}"
+                value="${customVal}"
+                oninput="onWeightInputLive('${eq.key}', this.value, ${eq.defaultWeight})"
+              />
+              <span class="unit-lbl">kg</span>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      container.innerHTML = `
+        <!-- 1. METRÓNOMO EDITABLE (OPCIÓN A) -->
+        <section class="panel-section">
+          <div class="panel-sec-title">
+            <span>⏱ Metrónomo de Tempo (Opción A)</span>
+            <button class="chip-btn ${state.metroEnabled ? 'active' : ''}" onclick="toggleMetronome()">
+              ${state.metroEnabled ? '🔊 ACTIVO' : '🔇 INACTIVO'}
+            </button>
+          </div>
+          <div class="panel-row">
+            <div>
+              <div class="panel-lbl">Intervalo del Pulso (Segundos)</div>
+              <div class="panel-sub">Emite un click guía durante la serie para contar tus bajadas y pausas.</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:5px">
+              <button class="seg-btn" onclick="stepMetroInterval(-0.1)">-0.1s</button>
+              <input
+                id="panelMetroInput"
+                type="number"
+                step="0.1"
+                min="0.3"
+                max="5.0"
+                inputmode="decimal"
+                class="weight-field"
+                value="${Number(state.metroIntervalSec).toFixed(1)}"
+                oninput="updateMetroInterval(this.value)"
+              />
+              <button class="seg-btn" onclick="stepMetroInterval(0.1)">+0.1s</button>
+            </div>
+          </div>
+          <div class="panel-row">
+            <div class="panel-lbl">Sonido General de la App</div>
+            <button class="seg-btn ${state.sound ? 'active' : ''}" onclick="state.sound=!state.sound;saveState();render();">
+              ${state.sound ? '🔊 Sonido ON' : '🔇 Silencio'}
+            </button>
+          </div>
+        </section>
+
+        <!-- 2. CONFIGURACIÓN DE RUTINA Y ROTACIÓN -->
+        <section class="panel-section">
+          <div class="panel-sec-title">
+            <span>🔄 Configuración de Rutina y Ciclo</span>
+          </div>
+          <div class="panel-row">
+            <div>
+              <div class="panel-lbl">Orden Semanal de Fuerza</div>
+              <div class="panel-sub">Cambia automáticamente al pulsar "Reiniciar ⇄" al final de la semana.</div>
+            </div>
+            <div class="seg-group">
+              <button class="seg-btn ${state.weekPattern === 'ABA' ? 'active' : ''}" onclick="state.weekPattern='ABA';saveState();render();">A-B-A</button>
+              <button class="seg-btn ${state.weekPattern === 'BAB' ? 'active' : ''}" onclick="state.weekPattern='BAB';saveState();render();">B-A-B</button>
+            </div>
+          </div>
+
+          <div class="panel-row">
+            <div>
+              <div class="panel-lbl">Rutina A · Agarre Dominadas (Define B2)</div>
+              <div class="panel-sub">Prono/Neutro activa Curl Bíceps; Supino activa Elev. Laterales.</div>
+            </div>
+            <div class="seg-group">
+              <button class="seg-btn ${state.gripA === 'prono' ? 'active' : ''}" onclick="state.gripA='prono';saveState();render();">Prono</button>
+              <button class="seg-btn ${state.gripA === 'supino' ? 'active' : ''}" onclick="state.gripA='supino';saveState();render();">Supino</button>
+            </div>
+          </div>
+
+          <div class="panel-row">
+            <div>
+              <div class="panel-lbl">Rutina A · Vueltas del Bloque A</div>
+              <div class="panel-sub">Biserie de Dominadas + Flexiones profundas.</div>
+            </div>
+            <div class="seg-group">
+              <button class="seg-btn ${state.roundsBlockA_A === 3 ? 'active' : ''}" onclick="state.roundsBlockA_A=3;saveState();render();">3 Vueltas</button>
+              <button class="seg-btn ${state.roundsBlockA_A === 4 ? 'active' : ''}" onclick="state.roundsBlockA_A=4;saveState();render();">4 Vueltas</button>
+            </div>
+          </div>
+
+          <div class="panel-row">
+            <div>
+              <div class="panel-lbl">Rutina B · Variante Tríceps (B2)</div>
+              <div class="panel-sub">Elige tu ejercicio de empuje de tríceps en Bloque B.</div>
+            </div>
+            <div class="seg-group">
+              <button class="seg-btn ${state.variantB2_B === 'diamante' ? 'active' : ''}" onclick="state.variantB2_B='diamante';saveState();render();">Diamante</button>
+              <button class="seg-btn ${state.variantB2_B === 'fondos' ? 'active' : ''}" onclick="state.variantB2_B='fondos';saveState();render();">Fondos</button>
+            </div>
+          </div>
+
+          <div class="panel-row">
+            <div>
+              <div class="panel-lbl">Reiniciar Solo las Series de Hoy</div>
+              <div class="panel-sub">Limpia el progreso del día actual sin rotar la semana A-B-A / B-A-B.</div>
+            </div>
+            <button class="seg-btn" onclick="resetOnlyCurrentDaySession(true)">↺ Reiniciar Hoy</button>
+          </div>
+        </section>
+
+        <!-- 3. CARGAS ESTÁNDAR Y SUGERIDAS -->
+        <section class="panel-section">
+          <div class="panel-sec-title">
+            <span>🏋️‍♂️ Cargas de Equipamiento (Vacío = Sugerido)</span>
+          </div>
+          ${equipInputsHTML}
+        </section>
+
+        <!-- 4. TIEMPOS DE DESCANSO EDITABLES -->
+        <section class="panel-section">
+          <div class="panel-sec-title">
+            <span>⏳ Tiempos de Descanso (Segundos)</span>
+          </div>
+          <div class="panel-row">
+            <span class="panel-lbl">Cambio de lado (Unilaterales)</span>
+            <input type="number" class="weight-field" value="${state.restConfig.unilateral}" oninput="state.restConfig.unilateral=parseInt(this.value,10)||45;saveState();" />
+          </div>
+          <div class="panel-row">
+            <span class="panel-lbl">Descanso Biserie Bloque A</span>
+            <input type="number" class="weight-field" value="${state.restConfig.blockA}" oninput="state.restConfig.blockA=parseInt(this.value,10)||80;saveState();" />
+          </div>
+          <div class="panel-row">
+            <span class="panel-lbl">Descanso Biserie Bloque B</span>
+            <input type="number" class="weight-field" value="${state.restConfig.blockB}" oninput="state.restConfig.blockB=parseInt(this.value,10)||60;saveState();" />
+          </div>
+          <div class="panel-row">
+            <span class="panel-lbl">Pausa Transición entre Bloques</span>
+            <input type="number" class="weight-field" value="${state.restConfig.transition}" oninput="state.restConfig.transition=parseInt(this.value,10)||90;saveState();" />
+          </div>
+        </section>
+      `;
+    }
+
+    /* =========================================================================
+       11. VISTA DE TROTE URBANO (LIMPIA, SIN NRC, SIN BOTONES +-, SIN SEGUNDOS)
+       ========================================================================= */
+    function renderRunView(container, isOptionalDay6) {
+      const pace = formatPaceFromRun(state.runDistKm, state.runTotalMin);
+      const optSwitch = isOptionalDay6 ? `
+        <div class="panel-section" style="padding:10px 14px;display:flex;justify-content:space-between;align-items:center">
+          <span class="panel-lbl">Día 6 Flexible:</span>
+          <div class="seg-group">
+            <button class="seg-btn ${state.day6Mode === 'run' ? 'active' : ''}" onclick="state.day6Mode='run';saveState();render();">Trote Urbano</button>
+            <button class="seg-btn ${state.day6Mode === 'rest' ? 'active' : ''}" onclick="state.day6Mode='rest';saveState();render();">Descanso</button>
+          </div>
+        </div>
+      ` : '';
+
+      const latestRun = [...state.history].reverse().find(h => h.type === 'run');
+
+      container.innerHTML = `
+        ${optSwitch}
+        <div class="run-card">
+          <div style="margin-bottom:12px">
+            <div style="font-size:17px;font-weight:800">Trote Urbano</div>
+            <div style="font-size:11.5px;color:var(--muted);margin-top:2px">Terreno plano · Registra tu distancia total y tiempo en minutos al finalizar.</div>
+          </div>
+
+          <div class="run-targets">
+            <div class="run-stat-box">
+              <span class="lbl">Volumen Meta</span>
+              <span class="val">5,0–6,0 km</span>
+            </div>
+            <div class="run-stat-box">
+              <span class="lbl">Duración Meta</span>
+              <span class="val">30–35 min</span>
+            </div>
+            <div class="run-stat-box">
+              <span class="lbl">Ritmo Meta</span>
+              <span class="val">5'40"–6'00"</span>
+            </div>
+          </div>
+
+          <!-- Casillas limpias: Solo Distancia Total (km) y Tiempo Total (min) -->
+          <div class="run-inputs-grid">
+            <div class="run-field-box">
+              <label for="cleanDistInput">Distancia Total (km)</label>
+              <input
+                id="cleanDistInput"
+                type="number"
+                step="0.01"
+                inputmode="decimal"
+                class="run-clean-input"
+                placeholder="5.50"
+                value="${state.runDistKm}"
+                oninput="onCleanRunInput('dist', this.value)"
+              />
+            </div>
+
+            <div class="run-field-box">
+              <label for="cleanMinInput">Tiempo Total (min)</label>
+              <input
+                id="cleanMinInput"
+                type="number"
+                step="0.5"
+                inputmode="decimal"
+                class="run-clean-input"
+                placeholder="32"
+                value="${state.runTotalMin}"
+                oninput="onCleanRunInput('min', this.value)"
+              />
+            </div>
+          </div>
+
+          <div class="run-field-box" style="margin-bottom:12px;display:flex;justify-content:space-between;align-items:center">
+            <label for="cleanKcalInput" style="margin:0">Energía Activa Opcional (kcal)</label>
+            <input
+              id="cleanKcalInput"
+              type="number"
+              step="1"
+              inputmode="numeric"
+              class="weight-field"
+              style="width:95px;font-size:15px"
+              value="${state.runKcal}"
+              oninput="onCleanRunInput('kcal', this.value)"
+            />
+          </div>
+
+          <div class="run-pace-result">
+            <div>
+              <span style="font-size:10px;color:var(--muted);display:block;font-family:var(--font-mono)">RITMO PROMEDIO</span>
+              <span class="pace-big" id="runLivePace">${pace.text}</span>
+            </div>
+            <span class="pace-status ${pace.optimal ? 'ok' : 'warn'}" id="runLiveStatus">
+              ${pace.optimal ? '✓ ZONA AERÓBICA (5\'40"–6\'00")' : '⚡ FUERA DE RANGO META'}
+            </span>
+          </div>
+
+          ${latestRun ? `
+            <div class="last-session-bar">
+              <span>📌 Último trote (${latestRun.date}):</span>
+              <strong>${latestRun.distKm} km en ${latestRun.timeFormatted} (${latestRun.pace})</strong>
+            </div>
+          ` : ''}
+        </div>
+      `;
+    }
+
+    function renderRestView(container, isOptionalDay6) {
+      const optSwitch = isOptionalDay6 ? `
+        <div class="panel-section" style="padding:10px 14px;display:flex;justify-content:space-between;align-items:center">
+          <span class="panel-lbl">Día 6 Flexible:</span>
+          <div class="seg-group">
+            <button class="seg-btn ${state.day6Mode === 'run' ? 'active' : ''}" onclick="state.day6Mode='run';saveState();render();">Trote Urbano</button>
+            <button class="seg-btn ${state.day6Mode === 'rest' ? 'active' : ''}" onclick="state.day6Mode='rest';saveState();render();">Descanso</button>
+          </div>
+        </div>
+      ` : '';
+
+      container.innerHTML = `
+        ${optSwitch}
+        <div class="run-card" style="text-align:center;padding:28px 18px">
+          <div style="font-family:var(--font-mono);font-size:11px;color:var(--accent);font-weight:800;margin-bottom:6px">RECUPERACIÓN MUSCULAR Y ARTICULAR</div>
+          <div style="font-size:20px;font-weight:800;margin-bottom:8px">Día de Descanso</div>
+          <p style="font-size:12.5px;color:var(--muted);line-height:1.5;max-width:360px;margin:0 auto">
+            Mantén tu meta de proteína diaria e hidratación para supercompensar las sesiones de fuerza (RIR 1–2) y descargar el impacto del trote.
+          </p>
+        </div>
+      `;
+    }
+
+    /* =========================================================================
+       12. VISTA DE HISTORIAL + REPORTE SEMANAL PARA CHAT + RESPALDO JSON
+       ========================================================================= */
+    function renderHistoryView(container) {
+      const items = [...state.history].reverse();
+      const weeklyReportText = buildWeeklyReportForChat();
+
+      container.innerHTML = `
+        <!-- GENERADOR DE REPORTE SEMANAL PARA PEGAR EN EL CHAT -->
+        <section class="summary-card">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+            <div>
+              <strong style="font-size:13px;color:var(--accent)">📈 Reporte Semanal para Chat</strong>
+              <div style="font-size:11px;color:var(--muted)">Copia este diagnóstico y pégalo en el chat para revisar cargas y progresión.</div>
+            </div>
+            <button class="chip-btn active" onclick="copyText(buildWeeklyReportForChat())">📋 Copiar Reporte</button>
+          </div>
+          <div class="summary-pre">${weeklyReportText}</div>
+        </section>
+
+        <!-- RESPALDO PERMANENTE JSON PARA iOS -->
+        <section class="panel-section">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <strong style="font-size:12.5px">📲 Respaldo de Datos iOS (JSON)</strong>
+            <span style="font-family:var(--font-mono);font-size:10px;color:var(--accent)">${state.history.length} sesiones</span>
+          </div>
+          <p style="font-size:11px;color:var(--muted);margin:4px 0 10px;line-height:1.35">
+            Guarda una copia de tus entrenos o restaura un archivo previo cuando actualices tu repositorio.
+          </p>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <button class="chip-btn active" style="justify-content:center" onclick="exportBackupJSON()">⬇ Exportar JSON</button>
+            <button class="chip-btn" style="justify-content:center" onclick="triggerFileImport()">⬆ Importar JSON</button>
+          </div>
+        </section>
+
+        ${items.length === 0 ? `
+          <div class="run-card" style="text-align:center;padding:24px 16px">
+            <div style="font-size:15px;font-weight:800;margin-bottom:4px">Sin sesiones registradas</div>
+            <p style="font-size:12px;color:var(--muted)">Tus entrenamientos de Fuerza A, Fuerza B y Trote Urbano aparecerán aquí.</p>
+          </div>
+        ` : `
+          <div style="display:flex;justify-content:space-between;align-items:center;margin:12px 2px 8px">
+            <span style="font-family:var(--font-mono);font-size:11px;font-weight:800;color:var(--muted)">REGISTROS INDIVIDUALES (${items.length})</span>
+            <button class="chip-btn" onclick="if(confirm('¿Borrar todo el historial?')){state.history=[];state.completedDays={};saveState();render();}">🗑 Limpiar</button>
+          </div>
+          ${items.map(rec => `
+            <div class="panel-section" style="padding:12px">
+              <div style="display:flex;justify-content:space-between;align-items:center">
+                <div>
+                  <strong style="font-size:13px">${rec.title}</strong>
+                  <div style="font-family:var(--font-mono);font-size:10px;color:var(--muted)">${rec.date} · Día ${rec.day}</div>
+                </div>
+                <button class="chip-btn" onclick="copyText(buildSummaryText(state.history.find(x=>x.id===${rec.id})))">📋 Copiar</button>
+              </div>
+              <div class="summary-pre" style="margin-bottom:0">${buildSummaryText(rec)}</div>
+            </div>
+          `).join('')}
+        `}
+      `;
+    }
+
+    function toggleExpandEx(exId) {
+      state.expandedExId = state.expandedExId === exId ? null : exId;
+      render();
+    }
+
+    /* Inicialización */
+    setupIOSPWA();
+    loadState();
+    if (state.metroEnabled) restartMetronomeLoop();
+    const initDays = getCycleDays();
+    const initDayObj = initDays.find(d => d.day === state.day);
+    if (initDayObj && (initDayObj.type === 'routineA' || initDayObj.type === 'routineB')) {
+      const initData = getRoutineData(initDayObj.type);
+      const initSteps = buildStepsForRoutine(initData);
+      if (initSteps[0]) {
+        state.currentReps = initSteps[0].ex.defaultReps;
+        state.expandedExId = initSteps[0].ex.id;
+      }
+    }
+    render();
+  </script>
+</body>
+</html>
