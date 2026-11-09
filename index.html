@@ -1196,6 +1196,7 @@
       stepIndex: 0,
       isResting: false,
       restRemaining: 0,
+      restEndTimestamp: null,
       currentReps: 8,
       currentRIR: '2',
       expandedExId: null,
@@ -1203,6 +1204,7 @@
       sessionLogs: {},          // { exId: [{ set, reps, rir, weight, leftReps, rightReps }] }
       sessionStartTime: null,
       completedDays: {},
+      confirmingClearAll: false,
       // Trote Urbano limpio (solo km totales y minutos totales)
       runDistKm: 5.50,
       runTotalMin: 32,
@@ -1214,6 +1216,22 @@
     let timerInterval = null;
     let metroTimer = null;
     let sharedAudioCtx = null;
+
+    function getTodayDateKey() {
+      const d = new Date();
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${year}-${month}-${day}`;
+    }
+
+    function hasActiveSessionInProgress() {
+      return (
+        state.stepIndex > 0 ||
+        state.isResting === true ||
+        (state.sessionLogs && Object.keys(state.sessionLogs).length > 0)
+      );
+    }
 
     /* Devuelve los 7 días según el patrón activo ('ABA' o 'BAB') */
     function getCycleDays() {
@@ -1238,9 +1256,10 @@
             ...state,
             ...parsed,
             restConfig: { ...state.restConfig, ...(parsed.restConfig || {}) },
-            isResting: false,
-            restRemaining: 0,
-            activeModal: null
+            sessionLogs: parsed.sessionLogs || {},
+            manualExpandedBlocks: parsed.manualExpandedBlocks || {},
+            activeModal: null,
+            confirmingClearAll: false
           };
         }
       } catch (e) {}
@@ -1260,6 +1279,17 @@
           day6Mode: state.day6Mode,
           customWeights: state.customWeights,
           restConfig: state.restConfig,
+          // Persistencia completa de la sesión en curso para que no se resetee al minimizar en iOS
+          stepIndex: state.stepIndex,
+          isResting: state.isResting,
+          restRemaining: state.restRemaining,
+          restEndTimestamp: state.restEndTimestamp,
+          currentReps: state.currentReps,
+          currentRIR: state.currentRIR,
+          expandedExId: state.expandedExId,
+          manualExpandedBlocks: state.manualExpandedBlocks,
+          sessionLogs: state.sessionLogs,
+          sessionStartTime: state.sessionStartTime,
           completedDays: state.completedDays,
           runDistKm: state.runDistKm,
           runTotalMin: state.runTotalMin,
@@ -1692,6 +1722,7 @@
 
     function setRIR(rirVal) {
       state.currentRIR = rirVal;
+      saveState();
       document.querySelectorAll('.rir-btn').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.rir === rirVal);
       });
@@ -1709,6 +1740,7 @@
 
     function adjustReps(delta) {
       state.currentReps = Math.max(1, state.currentReps + delta);
+      saveState();
       const repEl = document.getElementById('liveRepDisplay');
       if (repEl) repEl.textContent = state.currentReps;
     }
@@ -2137,14 +2169,20 @@
       }
       state.isResting = true;
       state.restRemaining = seconds;
+      state.restEndTimestamp = Date.now() + Math.round(seconds * 1000);
+      saveState();
       render();
+      runRestIntervalLoop();
+    }
 
-      let lastWholeSec = Math.ceil(seconds);
-      const endTime = performance.now() + seconds * 1000;
+    function runRestIntervalLoop() {
+      clearInterval(timerInterval);
+      if (!state.isResting || !state.restEndTimestamp) return;
+
+      let lastWholeSec = Math.ceil((state.restEndTimestamp - Date.now()) / 1000);
 
       timerInterval = setInterval(() => {
-        const now = performance.now();
-        const rem = Math.max(0, (endTime - now) / 1000);
+        const rem = Math.max(0, (state.restEndTimestamp - Date.now()) / 1000);
         state.restRemaining = rem;
 
         const whole = Math.ceil(rem);
@@ -2161,12 +2199,29 @@
           playBeep(1046, 0.24);
           finishRestAndAdvance();
         }
-      }, 80);
+      }, 100);
+    }
+
+    /* Sincroniza el estado y el reloj al volver a abrir o maximizar la app en iOS */
+    function syncSessionAfterWake() {
+      if (!state.isResting || !state.restEndTimestamp) return;
+      const rem = (state.restEndTimestamp - Date.now()) / 1000;
+      if (rem > 0) {
+        state.restRemaining = rem;
+        render();
+        runRestIntervalLoop();
+      } else {
+        clearInterval(timerInterval);
+        finishRestAndAdvance();
+      }
     }
 
     function adjustRestTime(deltaSec) {
       if (!state.isResting) return;
-      const next = Math.max(1, state.restRemaining + deltaSec);
+      const currentRem = state.restEndTimestamp
+        ? Math.max(0, (state.restEndTimestamp - Date.now()) / 1000)
+        : state.restRemaining;
+      const next = Math.max(1, currentRem + deltaSec);
       startRestTimer(next);
     }
 
@@ -2178,6 +2233,7 @@
     function finishRestAndAdvance() {
       state.isResting = false;
       state.restRemaining = 0;
+      state.restEndTimestamp = null;
       const days = getCycleDays();
       const dayObj = days.find(d => d.day === state.day);
       const rData = getRoutineData(dayObj.type);
@@ -2188,6 +2244,7 @@
         const nextStep = steps[state.stepIndex];
         state.currentReps = nextStep.ex.defaultReps;
         state.expandedExId = nextStep.ex.id;
+        saveState();
       } else {
         completeStrengthWorkout(rData);
       }
@@ -2274,6 +2331,7 @@
         });
       }
 
+      saveState();
       playBeep(784, 0.12);
 
       if (curStep.restAfter > 0) {
@@ -2281,6 +2339,36 @@
       } else {
         finishRestAndAdvance();
       }
+    }
+
+    /* Guarda o sobrescribe el registro del mismo día/fecha para evitar duplicados */
+    function upsertWorkoutHistoryRecord(record) {
+      const existingIdx = state.history.findIndex(
+        h => h.dateKey && h.dateKey === record.dateKey && h.type === record.type && h.day === record.day
+      );
+      if (existingIdx !== -1) {
+        state.history[existingIdx] = record;
+        return 'updated';
+      } else {
+        state.history.push(record);
+        return 'inserted';
+      }
+    }
+
+    function deleteHistoryRecord(recordId) {
+      const idx = state.history.findIndex(h => h.id === recordId);
+      if (idx === -1) return;
+      const removed = state.history[idx];
+      state.history.splice(idx, 1);
+
+      // Si ya no quedan registros para ese día del ciclo, desmarca el punto completado
+      const stillHasDay = state.history.some(h => h.day === removed.day);
+      if (!stillHasDay) {
+        delete state.completedDays[removed.day];
+      }
+      saveState();
+      showToast('🗑 Registro eliminado');
+      render();
     }
 
     function completeStrengthWorkout(rData) {
@@ -2304,9 +2392,11 @@
         });
       });
 
+      const todayKey = getTodayDateKey();
       const record = {
         id: Date.now(),
         timestamp: Date.now(),
+        dateKey: todayKey,
         date: new Date().toLocaleDateString('es-CL', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }),
         day: state.day,
         weekPattern: state.weekPattern,
@@ -2317,10 +2407,10 @@
         exercises: exSummary
       };
 
-      state.history.push(record);
+      const mode = upsertWorkoutHistoryRecord(record);
       state.completedDays[state.day] = true;
       saveState();
-      showToast('✓ Entrenamiento guardado en Historial');
+      showToast(mode === 'updated' ? '✓ Registro de hoy actualizado (sin duplicar)' : '✓ Entrenamiento guardado en Historial');
     }
 
     /* Botón inferior "Reiniciar ⇄": Reinicia la semana y alterna entre A-B-A y B-A-B */
@@ -2350,6 +2440,7 @@
       clearInterval(timerInterval);
       state.isResting = false;
       state.restRemaining = 0;
+      state.restEndTimestamp = null;
       state.stepIndex = 0;
       state.sessionLogs = {};
       state.manualExpandedBlocks = {};
@@ -2365,6 +2456,7 @@
           state.expandedExId = steps[0].ex.id;
         }
       }
+      saveState();
       if (notify) {
         showToast('↺ Series de hoy reiniciadas');
         render();
@@ -2414,9 +2506,11 @@
 
     function saveRunSession() {
       const pace = formatPaceFromRun(state.runDistKm, state.runTotalMin);
+      const todayKey = getTodayDateKey();
       const record = {
         id: Date.now(),
         timestamp: Date.now(),
+        dateKey: todayKey,
         date: new Date().toLocaleDateString('es-CL', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }),
         day: state.day,
         weekPattern: state.weekPattern,
@@ -2427,10 +2521,10 @@
         pace: pace.text,
         kcal: state.runKcal
       };
-      state.history.push(record);
+      const mode = upsertWorkoutHistoryRecord(record);
       state.completedDays[state.day] = true;
       saveState();
-      showToast('✓ Trote Urbano guardado en Historial');
+      showToast(mode === 'updated' ? '✓ Trote de hoy actualizado (sin duplicar)' : '✓ Trote Urbano guardado en Historial');
       render();
     }
 
@@ -2593,11 +2687,13 @@
        9. NAVEGACIÓN Y RENDERIZADO PRINCIPAL (CONSOLA UNIFICADA + REORDENAMIENTO)
        ========================================================================= */
     function selectDay(d) {
+      if (d === state.day && state.activeModal === null) return;
       clearInterval(timerInterval);
       state.day = d;
       state.activeModal = null;
       state.isResting = false;
       state.restRemaining = 0;
+      state.restEndTimestamp = null;
       state.stepIndex = 0;
       state.sessionLogs = {};
       state.manualExpandedBlocks = {};
@@ -2635,6 +2731,7 @@
 
     function toggleCompletedBlockExpand(blockId) {
       state.manualExpandedBlocks[blockId] = !state.manualExpandedBlocks[blockId];
+      saveState();
       render();
     }
 
@@ -2950,9 +3047,12 @@
       const latestToday = [...state.history].reverse().find(h => h.day === state.day && h.type === 'strength');
       const summaryHTML = latestToday ? `
         <div class="summary-card">
-          <div style="display:flex;justify-content:space-between;align-items:center">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap">
             <strong style="font-size:12.5px;color:var(--accent)">✓ SESIÓN GUARDADA HOY</strong>
-            <button class="chip-btn active" onclick="copyText(buildSummaryText(state.history.find(x=>x.id===${latestToday.id})))">📋 Copiar</button>
+            <div style="display:flex;gap:6px">
+              <button class="chip-btn active" onclick="copyText(buildSummaryText(state.history.find(x=>x.id===${latestToday.id})))">📋 Copiar</button>
+              <button class="chip-btn" onclick="deleteHistoryRecord(${latestToday.id})">🗑 Limpiar</button>
+            </div>
           </div>
           <div class="summary-pre">${buildSummaryText(latestToday)}</div>
         </div>
@@ -3296,16 +3396,26 @@
         ` : `
           <div style="display:flex;justify-content:space-between;align-items:center;margin:12px 2px 8px">
             <span style="font-family:var(--font-mono);font-size:11px;font-weight:800;color:var(--muted)">REGISTROS INDIVIDUALES (${items.length})</span>
-            <button class="chip-btn" onclick="if(confirm('¿Borrar todo el historial?')){state.history=[];state.completedDays={};saveState();render();}">🗑 Limpiar</button>
+            ${state.confirmingClearAll ? `
+              <div style="display:flex;gap:5px">
+                <button class="chip-btn active" onclick="state.history=[];state.completedDays={};state.confirmingClearAll=false;saveState();render();showToast('🗑 Historial vaciado');">✓ Confirmar Borrar Todo</button>
+                <button class="chip-btn" onclick="state.confirmingClearAll=false;render();">Cancelar</button>
+              </div>
+            ` : `
+              <button class="chip-btn" onclick="state.confirmingClearAll=true;render();">🗑 Limpiar Todo</button>
+            `}
           </div>
           ${items.map(rec => `
             <div class="panel-section" style="padding:12px">
-              <div style="display:flex;justify-content:space-between;align-items:center">
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;flex-wrap:wrap">
                 <div>
                   <strong style="font-size:13px">${rec.title}</strong>
                   <div style="font-family:var(--font-mono);font-size:10px;color:var(--muted)">${rec.date} · Día ${rec.day}</div>
                 </div>
-                <button class="chip-btn" onclick="copyText(buildSummaryText(state.history.find(x=>x.id===${rec.id})))">📋 Copiar</button>
+                <div style="display:flex;gap:6px">
+                  <button class="chip-btn" onclick="copyText(buildSummaryText(state.history.find(x=>x.id===${rec.id})))">📋 Copiar</button>
+                  <button class="chip-btn" onclick="deleteHistoryRecord(${rec.id})">🗑 Limpiar</button>
+                </div>
               </div>
               <div class="summary-pre" style="margin-bottom:0">${buildSummaryText(rec)}</div>
             </div>
@@ -3316,10 +3426,22 @@
 
     function toggleExpandEx(exId) {
       state.expandedExId = state.expandedExId === exId ? null : exId;
+      saveState();
       render();
     }
 
-    /* Inicialización */
+    /* Eventos del ciclo de vida en iOS para guardar y restaurar sin reseteos al minimizar */
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') {
+        saveState();
+      } else if (document.visibilityState === 'visible') {
+        syncSessionAfterWake();
+      }
+    });
+    window.addEventListener('pagehide', () => saveState());
+    window.addEventListener('pageshow', () => syncSessionAfterWake());
+
+    /* Inicialización conservando cualquier sesión activa en curso */
     setupIOSPWA();
     loadState();
     if (state.metroEnabled) restartMetronomeLoop();
@@ -3328,12 +3450,18 @@
     if (initDayObj && (initDayObj.type === 'routineA' || initDayObj.type === 'routineB')) {
       const initData = getRoutineData(initDayObj.type);
       const initSteps = buildStepsForRoutine(initData);
-      if (initSteps[0]) {
+      if (!hasActiveSessionInProgress() && initSteps[0]) {
         state.currentReps = initSteps[0].ex.defaultReps;
         state.expandedExId = initSteps[0].ex.id;
+      } else if (state.stepIndex >= initSteps.length) {
+        state.stepIndex = Math.max(0, initSteps.length - 1);
       }
     }
-    render();
+    if (state.isResting && state.restEndTimestamp) {
+      syncSessionAfterWake();
+    } else {
+      render();
+    }
   </script>
 </body>
 </html>
