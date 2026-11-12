@@ -1694,6 +1694,794 @@
     }
 
     /* =========================================================================
+       3. MOTOR DE RIR, PESO EN VIVO Y SOBRECARGA PROGRESIVA (OPCIÓN C)
+       ========================================================================= */
+    function onWeightInputLive(weightKey, rawValue, defaultWeight) {
+      if (!weightKey) return;
+      const cleaned = String(rawValue).trim().replace(',', '.');
+      if (cleaned === '') {
+        delete state.customWeights[weightKey];
+      } else {
+        const num = parseFloat(cleaned);
+        if (!isNaN(num) && num >= 0) {
+          state.customWeights[weightKey] = num;
+        }
+      }
+      saveState();
+
+      const effective = getEffectiveWeight(weightKey, defaultWeight);
+      document.querySelectorAll(`[data-weight-badge="${weightKey}"]`).forEach(el => {
+        el.textContent = `${effective} kg`;
+      });
+      document.querySelectorAll(`input[data-weight-input="${weightKey}"]`).forEach(inp => {
+        if (document.activeElement !== inp) {
+          inp.value = state.customWeights[weightKey] !== undefined ? state.customWeights[weightKey] : '';
+        }
+      });
+    }
+
+    function setRIR(rirVal) {
+      state.currentRIR = rirVal;
+      saveState();
+      document.querySelectorAll('.rir-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.rir === rirVal);
+      });
+      const capEl = document.getElementById('rirLiveHint');
+      if (capEl) {
+        const hints = {
+          '0': 'Fallo técnico (0 en reserva)',
+          '1': 'Zona óptima alta (1 en reserva)',
+          '2': 'Objetivo ideal (2 en reserva)',
+          '3+': 'Carga con margen (3+ en reserva)'
+        };
+        capEl.textContent = hints[rirVal] || '';
+      }
+    }
+
+    function adjustReps(delta) {
+      state.currentReps = Math.max(1, (Number(state.currentReps) || 1) + delta);
+      saveState();
+      const repEl = document.getElementById('liveRepDisplay');
+      if (repEl) repEl.textContent = state.currentReps;
+    }
+
+    function getLastExerciseRecord(exId) {
+      for (let i = state.history.length - 1; i >= 0; i--) {
+        const item = state.history[i];
+        if (item.exercises && item.exercises[exId]) {
+          return item.exercises[exId];
+        }
+      }
+      return null;
+    }
+
+    function getOverloadSuggestion(ex) {
+      const prev = getLastExerciseRecord(ex.id);
+      if (!prev || !prev.sets || prev.sets.length === 0) {
+        return {
+          type: 'steady',
+          label: `Meta hoy: ${ex.minReps}–${ex.maxReps} reps @ RIR 1–2`
+        };
+      }
+
+      const parsedSets = prev.sets.map(s => ({
+        reps: typeof s.reps === 'string'
+          ? Math.min(...s.reps.split('/').map(Number).filter(n => !isNaN(n)))
+          : Number(s.reps),
+        rir: String(s.rir || '2')
+      }));
+
+      const allReachedTop = parsedSets.every(s => s.reps >= ex.maxReps);
+      const allHadReserve = parsedSets.every(s => s.rir === '2' || s.rir === '3+');
+      const countHighReserve = parsedSets.filter(s => s.rir === '3+').length;
+      const countFailureOrUnder = parsedSets.filter(s => s.rir === '0' || s.reps < ex.minReps).length;
+
+      if (allReachedTop && allHadReserve) {
+        return {
+          type: 'up',
+          label: ex.weightKey
+            ? `↑ Subir +0,5 a +1 kg (tope logrado @ RIR ≥ 2)`
+            : `↑ Sumar +1 rep o lastre (tope @ RIR ≥ 2)`
+        };
+      }
+      if (countHighReserve >= 2) {
+        return {
+          type: 'up',
+          label: `↑ Última vez RIR 3+ (${countHighReserve} series) · Subir peso`
+        };
+      }
+      if (countFailureOrUnder >= 2) {
+        return {
+          type: 'hold',
+          label: `⚠ Alcanzaste RIR 0 · Consolidar carga actual`
+        };
+      }
+      return {
+        type: 'steady',
+        label: `✓ Mantener ${prev.weight || 'PC'} · Buscar +1 rep @ RIR 1–2`
+      };
+    }
+
+    /* =========================================================================
+       4. DIAGRAMAS BIOMECÁNICOS CAMINO 2
+       ========================================================================= */
+    function getBiomechSVG(diagramType) {
+      const headerDefs = `
+        <defs>
+          <pattern id="swissGrid" width="18" height="18" patternUnits="userSpaceOnUse">
+            <path d="M 18 0 L 0 0 0 18" fill="none" stroke="#282830" stroke-width="0.7"/>
+          </pattern>
+          <filter id="braunGlow" x="-20%" y="-20%" width="140%" height="140%">
+            <feGaussianBlur stdDeviation="2.2" result="blur"/>
+            <feMerge>
+              <feMergeNode in="blur"/>
+              <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+          </filter>
+        </defs>
+        <rect width="360" height="126" fill="url(#swissGrid)" rx="8"/>
+        <line x1="180" y1="10" x2="180" y2="114" stroke="#32323A" stroke-dasharray="3 3"/>
+      `;
+
+      const templates = {
+        pullup: `
+          <svg viewBox="0 0 360 126" width="100%" height="118">
+            ${headerDefs}
+            <text x="14" y="17" fill="#9E9EA8" font-size="8.5" font-family="JetBrains Mono" font-weight="700">1. SUSPENSIÓN ACTIVA</text>
+            <line x1="45" y1="24" x2="135" y2="24" stroke="#F4F4F0" stroke-width="3.5" stroke-linecap="round"/>
+            <line x1="72" y1="24" x2="80" y2="48" stroke="#686875" stroke-width="4" stroke-linecap="round"/>
+            <line x1="108" y1="24" x2="100" y2="48" stroke="#686875" stroke-width="4" stroke-linecap="round"/>
+            <circle cx="90" cy="43" r="7.5" fill="#2E2E36" stroke="#686875" stroke-width="1.3"/>
+            <path d="M77 50 L103 50 L98 82 L82 82 Z" fill="#2E2E36" stroke="#686875" stroke-width="1.2"/>
+            <path d="M78 52 L85 78 L95 78 L102 52 Z" fill="#EA580C" opacity="0.88" filter="url(#braunGlow)"/>
+            <line x1="85" y1="82" x2="85" y2="112" stroke="#2E2E36" stroke-width="6" stroke-linecap="round"/>
+            <line x1="95" y1="82" x2="95" y2="112" stroke="#2E2E36" stroke-width="6" stroke-linecap="round"/>
+
+            <text x="192" y="17" fill="#9E9EA8" font-size="8.5" font-family="JetBrains Mono" font-weight="700">2. TRACCIÓN + BAJADA 2s</text>
+            <line x1="225" y1="28" x2="315" y2="28" stroke="#F4F4F0" stroke-width="3.5" stroke-linecap="round"/>
+            <path d="M246 28 L236 46 L256 44" fill="none" stroke="#EA580C" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M294 28 L304 46 L284 44" fill="none" stroke="#EA580C" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="270" cy="25" r="7.5" fill="#2E2E36" stroke="#F4F4F0" stroke-width="1.3"/>
+            <path d="M255 36 L285 36 L279 70 L261 70 Z" fill="#2E2E36" stroke="#686875" stroke-width="1.2"/>
+            <path d="M256 38 L263 66 L277 66 L284 38 Z" fill="#EA580C" filter="url(#braunGlow)"/>
+            <rect x="262" y="56" width="16" height="12" fill="#F4F4F0" opacity="0.45" rx="2"/>
+            <line x1="265" y1="70" x2="263" y2="102" stroke="#2E2E36" stroke-width="6" stroke-linecap="round"/>
+            <line x1="275" y1="70" x2="277" y2="102" stroke="#2E2E36" stroke-width="6" stroke-linecap="round"/>
+            <text x="312" y="64" fill="#EA580C" font-size="8.5" font-family="JetBrains Mono" font-weight="800">2s ↓</text>
+          </svg>
+        `,
+        pushup_deep: `
+          <svg viewBox="0 0 360 126" width="100%" height="118">
+            ${headerDefs}
+            <line x1="12" y1="108" x2="348" y2="108" stroke="#454550" stroke-width="1.5"/>
+            <text x="14" y="17" fill="#9E9EA8" font-size="8.5" font-family="JetBrains Mono" font-weight="700">1. PLANCHA EN MANILLAS</text>
+            <path d="M126 108 L130 96 L144 96 L148 108" fill="none" stroke="#F4F4F0" stroke-width="2.5"/>
+            <path d="M28 94 L75 78 L124 58 L138 56 L124 69 L76 86 L30 102 Z" fill="#2E2E36" stroke="#686875"/>
+            <path d="M76 78 L116 63 L118 70 L78 84 Z" fill="#F4F4F0" opacity="0.4"/>
+            <path d="M116 58 C126 54,135 55,139 62 C134 68,123 68,116 63 Z" fill="#EA580C" filter="url(#braunGlow)"/>
+            <line x1="133" y1="61" x2="137" y2="96" stroke="#EA580C" stroke-width="5" stroke-linecap="round"/>
+            <circle cx="149" cy="53" r="8" fill="#2E2E36" stroke="#686875"/>
+
+            <text x="192" y="17" fill="#9E9EA8" font-size="8.5" font-family="JetBrains Mono" font-weight="700">2. DÉFICIT PROFUNDO (1s)</text>
+            <path d="M304 108 L308 96 L322 96 L326 108" fill="none" stroke="#F4F4F0" stroke-width="2.5"/>
+            <path d="M198 99 L246 92 L298 86 L314 86 L302 98 L248 99 L200 105 Z" fill="#2E2E36" stroke="#686875"/>
+            <path d="M292 85 C303 83,315 86,317 95 C309 101,297 99,291 93 Z" fill="#EA580C" filter="url(#braunGlow)"/>
+            <path d="M308 87 L295 70 L315 96" fill="none" stroke="#EA580C" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="295" cy="70" r="3" fill="#F4F4F0"/>
+            <circle cx="329" cy="87" r="8" fill="#2E2E36" stroke="#686875"/>
+            <text x="275" y="54" fill="#EA580C" font-size="8.5" font-family="JetBrains Mono" font-weight="800">45° · 1s PAUSA</text>
+          </svg>
+        `,
+        bulgarian: `
+          <svg viewBox="0 0 360 126" width="100%" height="118">
+            ${headerDefs}
+            <line x1="12" y1="110" x2="348" y2="110" stroke="#454550" stroke-width="1.5"/>
+            <rect x="24" y="84" width="26" height="26" rx="3" fill="#242429" stroke="#686875"/>
+            <rect x="204" y="84" width="26" height="26" rx="3" fill="#242429" stroke="#686875"/>
+            <text x="14" y="17" fill="#9E9EA8" font-size="8.5" font-family="JetBrains Mono" font-weight="700">1. INICIO CONTRALATERAL</text>
+            <circle cx="96" cy="30" r="7.5" fill="#2E2E36" stroke="#686875"/>
+            <path d="M88 39 L102 39 L99 72 L85 72 Z" fill="#2E2E36" stroke="#686875"/>
+            <path d="M92 72 L106 90 L106 110" fill="none" stroke="#EA580C" stroke-width="6" stroke-linecap="round"/>
+            <path d="M88 72 L68 86 L50 86" fill="none" stroke="#686875" stroke-width="4.5" stroke-linecap="round"/>
+            <rect x="84" y="68" width="16" height="8" rx="2" fill="#F4F4F0"/>
+
+            <text x="192" y="17" fill="#9E9EA8" font-size="8.5" font-family="JetBrains Mono" font-weight="700">2. DESCENSO PROFUNDO 2s</text>
+            <circle cx="282" cy="44" r="7.5" fill="#2E2E36" stroke="#686875"/>
+            <path d="M270 52 L286 52 L278 82 L262 82 Z" fill="#2E2E36" stroke="#686875"/>
+            <path d="M268 78 L296 82 L296 110" fill="none" stroke="#EA580C" stroke-width="7" stroke-linecap="round" filter="url(#braunGlow)"/>
+            <circle cx="268" cy="80" r="6" fill="#EA580C"/>
+            <path d="M264 82 L248 102 L230 86" fill="none" stroke="#686875" stroke-width="4.5" stroke-linecap="round"/>
+            <rect x="266" y="86" width="16" height="8" rx="2" fill="#F4F4F0"/>
+            <text x="306" y="70" fill="#EA580C" font-size="8.5" font-family="JetBrains Mono" font-weight="800">2s ↓</text>
+          </svg>
+        `,
+        curl: `
+          <svg viewBox="0 0 360 126" width="100%" height="118">
+            ${headerDefs}
+            <text x="14" y="17" fill="#9E9EA8" font-size="8.5" font-family="JetBrains Mono" font-weight="700">1. EXTENSIÓN COMPLETA</text>
+            <circle cx="88" cy="30" r="8" fill="#2E2E36" stroke="#686875"/>
+            <path d="M78 40 L98 40 L95 82 L81 82 Z" fill="#2E2E36" stroke="#686875"/>
+            <line x1="88" y1="45" x2="88" y2="70" stroke="#EA580C" stroke-width="5.5" stroke-linecap="round"/>
+            <line x1="88" y1="70" x2="92" y2="94" stroke="#F4F4F0" stroke-width="4" stroke-linecap="round"/>
+            <rect x="85" y="92" width="14" height="6" rx="2" fill="#F4F4F0"/>
+
+            <text x="192" y="17" fill="#9E9EA8" font-size="8.5" font-family="JetBrains Mono" font-weight="700">2. SUPINACIÓN + 2s BAJADA</text>
+            <circle cx="268" cy="30" r="8" fill="#2E2E36" stroke="#686875"/>
+            <path d="M258 40 L278 40 L275 82 L261 82 Z" fill="#2E2E36" stroke="#686875"/>
+            <line x1="268" y1="45" x2="268" y2="70" stroke="#EA580C" stroke-width="7.5" stroke-linecap="round" filter="url(#braunGlow)"/>
+            <line x1="268" y1="70" x2="288" y2="50" stroke="#EA580C" stroke-width="5" stroke-linecap="round"/>
+            <rect x="283" y="44" width="14" height="6" rx="2" fill="#F4F4F0"/>
+            <text x="302" y="68" fill="#EA580C" font-size="8.5" font-family="JetBrains Mono" font-weight="800">CODO FIJO</text>
+          </svg>
+        `,
+        lateral: `
+          <svg viewBox="0 0 360 126" width="100%" height="118">
+            ${headerDefs}
+            <text x="14" y="17" fill="#9E9EA8" font-size="8.5" font-family="JetBrains Mono" font-weight="700">1. INICIO PLANO ESCAPULAR</text>
+            <circle cx="90" cy="32" r="8" fill="#2E2E36" stroke="#686875"/>
+            <path d="M77 42 L103 42 L98 84 L82 84 Z" fill="#2E2E36" stroke="#686875"/>
+            <circle cx="77" cy="45" r="5" fill="#EA580C"/>
+            <circle cx="103" cy="45" r="5" fill="#EA580C"/>
+            <line x1="76" y1="46" x2="70" y2="78" stroke="#686875" stroke-width="4" stroke-linecap="round"/>
+            <line x1="104" y1="46" x2="110" y2="78" stroke="#686875" stroke-width="4" stroke-linecap="round"/>
+
+            <text x="192" y="17" fill="#9E9EA8" font-size="8.5" font-family="JetBrains Mono" font-weight="700">2. ABDUCCIÓN A 90°</text>
+            <circle cx="270" cy="32" r="8" fill="#2E2E36" stroke="#686875"/>
+            <path d="M257 42 L283 42 L278 84 L262 84 Z" fill="#2E2E36" stroke="#686875"/>
+            <circle cx="255" cy="45" r="6.5" fill="#EA580C" filter="url(#braunGlow)"/>
+            <circle cx="285" cy="45" r="6.5" fill="#EA580C" filter="url(#braunGlow)"/>
+            <line x1="255" y1="45" x2="222" y2="47" stroke="#EA580C" stroke-width="4.5" stroke-linecap="round"/>
+            <line x1="285" y1="45" x2="318" y2="47" stroke="#EA580C" stroke-width="4.5" stroke-linecap="round"/>
+            <rect x="214" y="43" width="9" height="6" fill="#F4F4F0"/>
+            <rect x="317" y="43" width="9" height="6" fill="#F4F4F0"/>
+          </svg>
+        `,
+        crunch: `
+          <svg viewBox="0 0 360 126" width="100%" height="118">
+            ${headerDefs}
+            <line x1="12" y1="106" x2="348" y2="106" stroke="#454550" stroke-width="1.5"/>
+            <text x="14" y="17" fill="#9E9EA8" font-size="8.5" font-family="JetBrains Mono" font-weight="700">1. DISCO AL ESTERNÓN</text>
+            <circle cx="42" cy="94" r="7" fill="#2E2E36" stroke="#686875"/>
+            <path d="M50 94 L98 94 L100 104 L50 104 Z" fill="#2E2E36" stroke="#686875"/>
+            <rect x="64" y="88" width="26" height="6" rx="2" fill="#EA580C"/>
+            <rect x="58" y="80" width="16" height="6" rx="2" fill="#F4F4F0"/>
+            <path d="M98 99 L122 72 L144 106" fill="none" stroke="#686875" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+
+            <text x="192" y="17" fill="#9E9EA8" font-size="8.5" font-family="JetBrains Mono" font-weight="700">2. FLEXIÓN ESPINAL (2s PAUSA)</text>
+            <circle cx="226" cy="70" r="7" fill="#2E2E36" stroke="#686875"/>
+            <path d="M232 76 Q256 96 282 98 L280 105 Q250 104 228 84 Z" fill="#2E2E36" stroke="#686875"/>
+            <path d="M244 82 Q262 93 276 95" fill="none" stroke="#EA580C" stroke-width="7" stroke-linecap="round" filter="url(#braunGlow)"/>
+            <rect x="242" y="68" width="16" height="6" rx="2" fill="#F4F4F0" transform="rotate(24 242 68)"/>
+            <path d="M280 99 L304 72 L326 106" fill="none" stroke="#686875" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        `,
+        rdl_bstance: `
+          <svg viewBox="0 0 360 126" width="100%" height="118">
+            ${headerDefs}
+            <line x1="12" y1="110" x2="348" y2="110" stroke="#454550" stroke-width="1.5"/>
+            <text x="14" y="17" fill="#9E9EA8" font-size="8.5" font-family="JetBrains Mono" font-weight="700">1. POSTURA B-STANCE</text>
+            <circle cx="94" cy="30" r="7.5" fill="#2E2E36" stroke="#686875"/>
+            <path d="M84 39 L98 39 L96 74 L82 74 Z" fill="#2E2E36" stroke="#686875"/>
+            <line x1="92" y1="74" x2="94" y2="110" stroke="#EA580C" stroke-width="6" stroke-linecap="round"/>
+            <line x1="84" y1="74" x2="72" y2="108" stroke="#686875" stroke-width="3.5" stroke-dasharray="3 2"/>
+            <circle cx="98" cy="86" r="6.5" fill="#F4F4F0"/>
+
+            <text x="192" y="17" fill="#9E9EA8" font-size="8.5" font-family="JetBrains Mono" font-weight="700">2. BISAGRA CADERA ATRÁS</text>
+            <circle cx="308" cy="54" r="7.5" fill="#2E2E36" stroke="#686875"/>
+            <path d="M254 68 L298 54 L302 64 L258 78 Z" fill="#2E2E36" stroke="#686875"/>
+            <path d="M256 76 L274 92 L276 110" fill="none" stroke="#EA580C" stroke-width="7" stroke-linecap="round" filter="url(#braunGlow)"/>
+            <circle cx="256" cy="74" r="6.5" fill="#EA580C" filter="url(#braunGlow)"/>
+            <line x1="254" y1="76" x2="238" y2="108" stroke="#686875" stroke-width="3.5" stroke-dasharray="3 2"/>
+            <line x1="292" y1="62" x2="292" y2="92" stroke="#F4F4F0" stroke-width="2.5"/>
+            <circle cx="292" cy="98" r="7" fill="#F4F4F0"/>
+            <text x="204" y="54" fill="#EA580C" font-size="8.5" font-family="JetBrains Mono" font-weight="800">← CADERA</text>
+          </svg>
+        `,
+        pike: `
+          <svg viewBox="0 0 360 126" width="100%" height="118">
+            ${headerDefs}
+            <line x1="12" y1="108" x2="348" y2="108" stroke="#454550" stroke-width="1.5"/>
+            <text x="14" y="17" fill="#9E9EA8" font-size="8.5" font-family="JetBrains Mono" font-weight="700">1. V INVERTIDA ALTA</text>
+            <path d="M122 108 L125 97 L137 97 L140 108" fill="none" stroke="#F4F4F0" stroke-width="2.5"/>
+            <line x1="38" y1="108" x2="80" y2="42" stroke="#2E2E36" stroke-width="7" stroke-linecap="round"/>
+            <line x1="80" y1="42" x2="116" y2="74" stroke="#2E2E36" stroke-width="8" stroke-linecap="round"/>
+            <line x1="116" y1="74" x2="131" y2="97" stroke="#EA580C" stroke-width="5.5" stroke-linecap="round" filter="url(#braunGlow)"/>
+            <circle cx="116" cy="74" r="5.5" fill="#EA580C"/>
+            <circle cx="122" cy="84" r="6.5" fill="#2E2E36" stroke="#686875"/>
+
+            <text x="192" y="17" fill="#9E9EA8" font-size="8.5" font-family="JetBrains Mono" font-weight="700">2. TRÍPODE (CABEZA ADELANTE)</text>
+            <path d="M294 108 L297 97 L309 97 L312 108" fill="none" stroke="#F4F4F0" stroke-width="2.5"/>
+            <line x1="214" y1="108" x2="256" y2="48" stroke="#2E2E36" stroke-width="7" stroke-linecap="round"/>
+            <line x1="256" y1="48" x2="296" y2="86" stroke="#2E2E36" stroke-width="8" stroke-linecap="round"/>
+            <path d="M296 86 L286 74 L303 97" fill="none" stroke="#EA580C" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" filter="url(#braunGlow)"/>
+            <circle cx="316" cy="95" r="6.5" fill="#2E2E36" stroke="#F4F4F0"/>
+            <text x="308" y="66" fill="#EA580C" font-size="8.5" font-family="JetBrains Mono" font-weight="800">TRÍPODE ⊿</text>
+          </svg>
+        `,
+        kb_row: `
+          <svg viewBox="0 0 360 126" width="100%" height="118">
+            ${headerDefs}
+            <line x1="12" y1="110" x2="348" y2="110" stroke="#454550" stroke-width="1.5"/>
+            <rect x="122" y="78" width="28" height="32" rx="3" fill="#242429" stroke="#686875"/>
+            <rect x="302" y="78" width="28" height="32" rx="3" fill="#242429" stroke="#686875"/>
+            <text x="14" y="17" fill="#9E9EA8" font-size="8.5" font-family="JetBrains Mono" font-weight="700">1. EXTENSIÓN ESCAPULAR</text>
+            <path d="M56 62 L108 62 L108 72 L56 72 Z" fill="#2E2E36" stroke="#686875"/>
+            <circle cx="118" cy="62" r="7" fill="#2E2E36" stroke="#686875"/>
+            <line x1="58" y1="72" x2="46" y2="110" stroke="#2E2E36" stroke-width="6" stroke-linecap="round"/>
+            <line x1="96" y1="68" x2="96" y2="96" stroke="#EA580C" stroke-width="4.5" stroke-linecap="round"/>
+            <circle cx="96" cy="102" r="6.5" fill="#F4F4F0"/>
+
+            <text x="192" y="17" fill="#9E9EA8" font-size="8.5" font-family="JetBrains Mono" font-weight="700">2. CODO A LA CADERA (1s)</text>
+            <path d="M236 62 L288 62 L288 72 L236 72 Z" fill="#EA580C" filter="url(#braunGlow)"/>
+            <circle cx="298" cy="62" r="7" fill="#2E2E36" stroke="#686875"/>
+            <line x1="238" y1="72" x2="226" y2="110" stroke="#2E2E36" stroke-width="6" stroke-linecap="round"/>
+            <path d="M276 66 L254 48 L260 74" fill="none" stroke="#F4F4F0" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="260" cy="80" r="6.5" fill="#F4F4F0"/>
+          </svg>
+        `,
+        diamond: `
+          <svg viewBox="0 0 360 126" width="100%" height="118">
+            ${headerDefs}
+            <line x1="12" y1="108" x2="348" y2="108" stroke="#454550" stroke-width="1.5"/>
+            <text x="14" y="17" fill="#9E9EA8" font-size="8.5" font-family="JetBrains Mono" font-weight="700">1. BLOQUEO DE TRÍCEPS</text>
+            <path d="M126 108 L130 97 L142 97 L146 108" fill="none" stroke="#F4F4F0" stroke-width="2.5"/>
+            <path d="M32 95 L126 58 L138 56 L124 68 L34 103 Z" fill="#2E2E36" stroke="#686875"/>
+            <line x1="132" y1="60" x2="136" y2="97" stroke="#EA580C" stroke-width="6" stroke-linecap="round" filter="url(#braunGlow)"/>
+            <circle cx="148" cy="54" r="7.5" fill="#2E2E36" stroke="#686875"/>
+
+            <text x="192" y="17" fill="#9E9EA8" font-size="8.5" font-family="JetBrains Mono" font-weight="700">2. CODOS PEGADOS AL TORSO</text>
+            <path d="M302 108 L306 97 L318 97 L322 108" fill="none" stroke="#F4F4F0" stroke-width="2.5"/>
+            <path d="M202 99 L302 86 L314 86 L300 96 L204 105 Z" fill="#2E2E36" stroke="#686875"/>
+            <path d="M306 88 L286 78 L312 97" fill="none" stroke="#EA580C" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" filter="url(#braunGlow)"/>
+            <circle cx="326" cy="86" r="7.5" fill="#2E2E36" stroke="#686875"/>
+          </svg>
+        `,
+        dips: `
+          <svg viewBox="0 0 360 126" width="100%" height="118">
+            ${headerDefs}
+            <rect x="64" y="68" width="48" height="40" rx="4" fill="#242429" stroke="#686875"/>
+            <rect x="244" y="68" width="48" height="40" rx="4" fill="#242429" stroke="#686875"/>
+            <text x="14" y="17" fill="#9E9EA8" font-size="8.5" font-family="JetBrains Mono" font-weight="700">1. EXTENSIÓN VERTICAL</text>
+            <circle cx="88" cy="28" r="7.5" fill="#2E2E36" stroke="#686875"/>
+            <path d="M78 38 L98 38 L95 72 L81 72 Z" fill="#2E2E36" stroke="#686875"/>
+            <line x1="88" y1="42" x2="88" y2="68" stroke="#EA580C" stroke-width="6" stroke-linecap="round" filter="url(#braunGlow)"/>
+
+            <text x="192" y="17" fill="#9E9EA8" font-size="8.5" font-family="JetBrains Mono" font-weight="700">2. FLEXIÓN 90° DE CODO</text>
+            <circle cx="268" cy="44" r="7.5" fill="#2E2E36" stroke="#686875"/>
+            <path d="M258 54 L278 54 L275 88 L261 88 Z" fill="#2E2E36" stroke="#686875"/>
+            <path d="M268 56 L248 56 L266 68" fill="none" stroke="#EA580C" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" filter="url(#braunGlow)"/>
+          </svg>
+        `,
+        hanging_knee: `
+          <svg viewBox="0 0 360 126" width="100%" height="118">
+            ${headerDefs}
+            <text x="14" y="17" fill="#9E9EA8" font-size="8.5" font-family="JetBrains Mono" font-weight="700">1. DESCOMPRESIÓN EN BARRA</text>
+            <line x1="55" y1="20" x2="125" y2="20" stroke="#F4F4F0" stroke-width="3.5" stroke-linecap="round"/>
+            <line x1="90" y1="20" x2="90" y2="42" stroke="#686875" stroke-width="4"/>
+            <circle cx="90" cy="40" r="7" fill="#2E2E36" stroke="#686875"/>
+            <path d="M82 48 L98 48 L96 78 L84 78 Z" fill="#2E2E36" stroke="#686875"/>
+            <line x1="90" y1="78" x2="90" y2="110" stroke="#2E2E36" stroke-width="6" stroke-linecap="round"/>
+
+            <text x="192" y="17" fill="#9E9EA8" font-size="8.5" font-family="JetBrains Mono" font-weight="700">2. BASCULACIÓN PÉLVICA</text>
+            <line x1="235" y1="20" x2="305" y2="20" stroke="#F4F4F0" stroke-width="3.5" stroke-linecap="round"/>
+            <line x1="270" y1="20" x2="270" y2="42" stroke="#686875" stroke-width="4"/>
+            <circle cx="270" cy="40" r="7" fill="#2E2E36" stroke="#686875"/>
+            <path d="M262 48 L278 48 L276 76 L264 76 Z" fill="#EA580C" filter="url(#braunGlow)"/>
+            <path d="M272 74 L298 62 L292 88" fill="none" stroke="#F4F4F0" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+            <text x="304" y="64" fill="#EA580C" font-size="8.5" font-family="JetBrains Mono" font-weight="800">PELVIS ↑</text>
+          </svg>
+        `
+      };
+
+      return templates[diagramType] || templates.pullup;
+    }
+
+    /* =========================================================================
+       5. AUDIO, METRÓNOMO Y TEMPORIZADOR DE DESCANSO CON SOPORTE SEGUNDO PLANO
+       ========================================================================= */
+    function getAudioCtx() {
+      if (!sharedAudioCtx) {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (AudioCtx) sharedAudioCtx = new AudioCtx();
+      }
+      if (sharedAudioCtx && sharedAudioCtx.state === 'suspended') {
+        sharedAudioCtx.resume();
+      }
+      return sharedAudioCtx;
+    }
+
+    function playBeep(freq = 880, duration = 0.12) {
+      if (!state.sound) return;
+      try {
+        const ctx = getAudioCtx();
+        if (!ctx) return;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.18, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + duration);
+      } catch (e) {}
+    }
+
+    function playMetronomeTick() {
+      if (!state.metroEnabled || state.isResting || state.activeModal !== null) return;
+      const led = document.getElementById('liveMetroLed');
+      if (led) {
+        led.classList.remove('pulsing');
+        void led.offsetWidth;
+        led.classList.add('pulsing');
+      }
+      if (!state.sound) return;
+      try {
+        const ctx = getAudioCtx();
+        if (!ctx) return;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(980, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(340, ctx.currentTime + 0.035);
+        gain.gain.setValueAtTime(0.14, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.035);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.04);
+      } catch (e) {}
+    }
+
+    function restartMetronomeLoop() {
+      clearInterval(metroTimer);
+      if (!state.metroEnabled) return;
+      const intervalMs = Math.max(300, Math.round((Number(state.metroIntervalSec) || 1.0) * 1000));
+      metroTimer = setInterval(() => {
+        playMetronomeTick();
+      }, intervalMs);
+    }
+
+    function toggleMetronome() {
+      state.metroEnabled = !state.metroEnabled;
+      saveState();
+      restartMetronomeLoop();
+      if (state.metroEnabled) playMetronomeTick();
+      render();
+    }
+
+    function stepMetroInterval(delta) {
+      const next = Math.max(0.3, Math.min(5.0, Math.round(((Number(state.metroIntervalSec) || 1.0) + delta) * 10) / 10));
+      state.metroIntervalSec = next;
+      saveState();
+      const inp = document.getElementById('panelMetroInput');
+      if (inp) inp.value = next.toFixed(1);
+      if (state.metroEnabled) restartMetronomeLoop();
+    }
+
+    function updateMetroInterval(rawVal) {
+      const parsed = parseFloat(String(rawVal).replace(',', '.'));
+      if (!isNaN(parsed) && parsed >= 0.3 && parsed <= 5.0) {
+        state.metroIntervalSec = Math.round(parsed * 10) / 10;
+        saveState();
+        if (state.metroEnabled) restartMetronomeLoop();
+      }
+    }
+
+    function startRestTimer(seconds) {
+      clearInterval(timerInterval);
+      if (seconds <= 0) {
+        finishRestAndAdvance();
+        return;
+      }
+      state.isResting = true;
+      state.restRemaining = seconds;
+      state.restEndTimestamp = Date.now() + Math.round(seconds * 1000);
+      saveState();
+      render();
+      runRestIntervalLoop();
+    }
+
+    function runRestIntervalLoop() {
+      clearInterval(timerInterval);
+      let lastWholeSec = Math.ceil(state.restRemaining);
+
+      timerInterval = setInterval(() => {
+        if (!state.isResting || !state.restEndTimestamp) {
+          clearInterval(timerInterval);
+          return;
+        }
+        const rem = Math.max(0, (state.restEndTimestamp - Date.now()) / 1000);
+        state.restRemaining = rem;
+
+        const whole = Math.ceil(rem);
+        if (whole !== lastWholeSec && whole <= 3 && whole > 0) {
+          playBeep(660, 0.1);
+          lastWholeSec = whole;
+        }
+
+        const timerEl = document.getElementById('liveTimerVal');
+        if (timerEl) timerEl.textContent = rem.toFixed(1) + 's';
+
+        if (rem <= 0) {
+          clearInterval(timerInterval);
+          playBeep(1046, 0.25);
+          finishRestAndAdvance();
+        }
+      }, 100);
+    }
+
+    /* Sincroniza el estado y el reloj de descanso tras volver de segundo plano en iOS */
+    function syncSessionAfterWake() {
+      if (state.isResting && state.restEndTimestamp) {
+        const rem = (state.restEndTimestamp - Date.now()) / 1000;
+        if (rem <= 0) {
+          clearInterval(timerInterval);
+          finishRestAndAdvance();
+          return;
+        } else {
+          state.restRemaining = rem;
+          render();
+          runRestIntervalLoop();
+          return;
+        }
+      }
+      render();
+    }
+
+    function adjustRestTime(deltaSec) {
+      if (!state.isResting) return;
+      const currentRem = state.restEndTimestamp ? Math.max(0, (state.restEndTimestamp - Date.now()) / 1000) : state.restRemaining;
+      const next = Math.max(1, currentRem + deltaSec);
+      startRestTimer(next);
+    }
+
+    function skipRest() {
+      clearInterval(timerInterval);
+      finishRestAndAdvance();
+    }
+
+    function finishRestAndAdvance() {
+      clearInterval(timerInterval);
+      state.isResting = false;
+      state.restRemaining = 0;
+      state.restEndTimestamp = null;
+
+      const days = getCycleDays();
+      const dayObj = days.find(d => d.day === state.day);
+      const effectiveType = dayObj.type === 'run_opt' ? state.day6Mode : dayObj.type;
+      const rData = getRoutineData(effectiveType);
+      const steps = buildStepsForRoutine(rData);
+
+      if (state.stepIndex < steps.length - 1) {
+        state.stepIndex++;
+        const nextStep = steps[state.stepIndex];
+        state.currentReps = nextStep.ex.defaultReps;
+        state.expandedExId = nextStep.ex.id;
+      } else {
+        completeStrengthWorkout(rData);
+      }
+      saveState();
+      render();
+    }
+
+    /* =========================================================================
+       6. ACCIÓN PRINCIPAL, GUARDADO SIN DUPLICADOS POR FECHA Y REINICIO SEMANAL
+       ========================================================================= */
+    function upsertWorkoutHistoryRecord(record) {
+      const idx = state.history.findIndex(
+        h => h.dateKey && h.dateKey === record.dateKey && h.type === record.type && h.day === record.day
+      );
+      if (idx !== -1) {
+        record.id = state.history[idx].id;
+        state.history[idx] = record;
+        return 'updated';
+      } else {
+        state.history.push(record);
+        return 'inserted';
+      }
+    }
+
+    function deleteHistoryRecord(recordId) {
+      const target = state.history.find(h => h.id === recordId);
+      state.history = state.history.filter(h => h.id !== recordId);
+      if (target) {
+        const stillHasDay = state.history.some(h => h.day === target.day);
+        if (!stillHasDay) {
+          delete state.completedDays[target.day];
+        }
+      }
+      saveState();
+      render();
+      showToast('🗑 Registro eliminado');
+    }
+
+    function handlePrimaryAction() {
+      if (state.activeModal !== null) {
+        state.activeModal = null;
+        render();
+        return;
+      }
+
+      const days = getCycleDays();
+      const dayObj = days.find(d => d.day === state.day);
+      const effectiveType = dayObj.type === 'run_opt' ? state.day6Mode : dayObj.type;
+
+      if (effectiveType === 'run') {
+        saveRunSession();
+        return;
+      }
+      if (effectiveType === 'rest') {
+        state.completedDays[state.day] = true;
+        saveState();
+        showToast('✓ Día de descanso registrado');
+        render();
+        return;
+      }
+
+      if (state.isResting) {
+        skipRest();
+        return;
+      }
+
+      const rData = getRoutineData(effectiveType);
+      const steps = buildStepsForRoutine(rData);
+      const curStep = steps[state.stepIndex];
+      if (!curStep) return;
+
+      if (!state.sessionStartTime) state.sessionStartTime = Date.now();
+
+      const ex = curStep.ex;
+      const usedWeight = ex.weightKey ? getEffectiveWeight(ex.weightKey, ex.defaultWeight) : 0;
+
+      if (!state.sessionLogs[ex.id]) state.sessionLogs[ex.id] = [];
+
+      if (ex.unilateral) {
+        if (curStep.limbIndex === 0) {
+          const existing = state.sessionLogs[ex.id].find(s => s.set === curStep.round);
+          if (existing) {
+            existing.leftReps = state.currentReps;
+            existing.reps = `${state.currentReps}/${existing.rightReps ?? '-'}`;
+            existing.rir = state.currentRIR;
+            existing.weight = usedWeight;
+          } else {
+            state.sessionLogs[ex.id].push({
+              set: curStep.round,
+              leftReps: state.currentReps,
+              rightReps: null,
+              reps: `${state.currentReps}/-`,
+              rir: state.currentRIR,
+              weight: usedWeight
+            });
+          }
+        } else {
+          const existing = state.sessionLogs[ex.id].find(s => s.set === curStep.round);
+          if (existing) {
+            existing.rightReps = state.currentReps;
+            existing.reps = `${existing.leftReps}/${state.currentReps}`;
+            existing.rir = state.currentRIR;
+            existing.weight = usedWeight;
+          } else {
+            state.sessionLogs[ex.id].push({
+              set: curStep.round,
+              leftReps: state.currentReps,
+              rightReps: state.currentReps,
+              reps: `${state.currentReps}/${state.currentReps}`,
+              rir: state.currentRIR,
+              weight: usedWeight
+            });
+          }
+        }
+      } else {
+        const existingIdx = state.sessionLogs[ex.id].findIndex(s => s.set === curStep.round);
+        const entry = {
+          set: curStep.round,
+          reps: state.currentReps,
+          rir: state.currentRIR,
+          weight: usedWeight
+        };
+        if (existingIdx !== -1) {
+          state.sessionLogs[ex.id][existingIdx] = entry;
+        } else {
+          state.sessionLogs[ex.id].push(entry);
+        }
+      }
+
+      saveState();
+      playBeep(784, 0.12);
+
+      if (curStep.restAfter > 0) {
+        startRestTimer(curStep.restAfter);
+      } else {
+        finishRestAndAdvance();
+      }
+    }
+
+    function completeStrengthWorkout(rData) {
+      const durationMin = state.sessionStartTime
+        ? Math.max(1, Math.round((Date.now() - state.sessionStartTime) / 60000))
+        : 38;
+
+      const exSummary = {};
+      rData.blocks.forEach(b => {
+        b.exercises.forEach(ex => {
+          const sets = state.sessionLogs[ex.id] || [];
+          const w = ex.weightKey ? `${getEffectiveWeight(ex.weightKey, ex.defaultWeight)} kg` : 'PC';
+          exSummary[ex.id] = {
+            name: ex.name,
+            code: ex.code,
+            weight: w,
+            maxReps: ex.maxReps,
+            sets: sets
+          };
+        });
+      });
+
+      const todayKey = getTodayDateKey();
+      const record = {
+        id: Date.now(),
+        timestamp: Date.now(),
+        dateKey: todayKey,
+        date: new Date().toLocaleDateString('es-CL', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }),
+        day: state.day,
+        weekPattern: state.weekPattern,
+        type: 'strength',
+        title: rData.title,
+        durationMin,
+        exercises: exSummary
+      };
+
+      const mode = upsertWorkoutHistoryRecord(record);
+      state.completedDays[state.day] = true;
+      saveState();
+      showToast(mode === 'updated' ? '✓ Sesión de hoy actualizada (sin duplicar)' : '✓ Entrenamiento guardado en Historial');
+    }
+
+    function resetOnlyCurrentDaySession(fromPanel = false) {
+      clearInterval(timerInterval);
+      state.isResting = false;
+      state.restRemaining = 0;
+      state.restEndTimestamp = null;
+      state.stepIndex = 0;
+      state.sessionLogs = {};
+      state.manualExpandedBlocks = {};
+      state.sessionStartTime = null;
+      if (fromPanel) state.activeModal = null;
+
+      const days = getCycleDays();
+      const dayObj = days.find(d => d.day === state.day);
+      const effectiveType = dayObj.type === 'run_opt' ? state.day6Mode : dayObj.type;
+      if (effectiveType === 'routineA' || effectiveType === 'routineB') {
+        const rData = getRoutineData(effectiveType);
+        const steps = buildStepsForRoutine(rData);
+        if (steps[0]) {
+          state.currentReps = steps[0].ex.defaultReps;
+          state.expandedExId = steps[0].ex.id;
+        }
+      }
+      saveState();
+      render();
+      showToast('↺ Sesión de hoy reiniciada');
+    }
+
+    function flipWeekPatternManual() {
+      state.weekPattern = state.weekPattern === 'ABA' ? 'BAB' : 'ABA';
+      resetOnlyCurrentDaySession(false);
+      showToast(`⇄ Orden cambiado a ${state.weekPattern === 'ABA' ? 'A-B-A' : 'B-A-B'}`);
+    }
+
+    function resetWeekAndFlipPattern() {
+      clearInterval(timerInterval);
+      state.weekPattern = state.weekPattern === 'ABA' ? 'BAB' : 'ABA';
+      state.day = 1;
+      state.completedDays = {};
+      state.activeModal = null;
+      resetOnlyCurrentDaySession(false);
+      showToast(`⇄ Nueva semana iniciada: Orden ${state.weekPattern === 'ABA' ? 'A-B-A' : 'B-A-B'}`);
+    }
+
+    /* =========================================================================
        7. TROTE URBANO MINIMALISTA (SOPORTE "6.49" Y TIEMPO "30:11")
        ========================================================================= */
     function parseRunTimeSeconds(rawTime) {
