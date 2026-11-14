@@ -3625,26 +3625,7 @@ function render() {
     ].join('');
   }).join('');
 
-  var latestToday = state.history.slice().reverse().find(function(h) {
-    return h.day === state.day && h.type === 'strength';
-  });
-  var summaryHTML = '';
-  if (latestToday && state.completedDays[state.day]) {
-    summaryHTML = [
-      '<div class="summary-card">',
-      '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px">',
-      '<strong style="font-size:12.5px;color:var(--accent)">✓ SESIÓN GUARDADA HOY</strong>',
-      '<div style="display:flex;gap:6px">',
-      '<button type="button" class="chip-btn active" onclick="copyText(buildSummaryText(state.history.find(function(x){return x.id===' + latestToday.id + ';})))">📋 Copiar</button>',
-      '<button type="button" class="chip-btn danger" onclick="deleteHistoryRecord(' + latestToday.id + ')">🗑 Limpiar</button>',
-      '</div>',
-      '</div>',
-      '<div class="summary-pre">' + buildSummaryText(latestToday) + '</div>',
-      '</div>'
-    ].join('');
-  }
-
-  main.innerHTML = unifiedConsoleHTML + summaryHTML + capsulesHTML;
+  main.innerHTML = unifiedConsoleHTML + capsulesHTML;
 }
 
 /* ============================================================================
@@ -3790,28 +3771,8 @@ function renderRunView(container, isOptionalDay6) {
   var statusClass = pace.empty ? '' : (pace.optimal ? 'ok' : 'warn');
   var statusText = pace.empty ? 'PENDIENTE DE DATOS' : (pace.optimal ? 'RITMO META (5\'30"–6\'00")' : 'RITMO REGISTRADO');
 
-  var todaySavedRun = (state.history || []).slice().reverse().find(function(h) {
-    return h && h.type === 'run' && h.day === state.day;
-  });
-  var savedRunSummaryHTML = '';
-  if (todaySavedRun && state.completedDays && state.completedDays[state.day]) {
-    savedRunSummaryHTML = [
-      '<div class="summary-card">',
-      '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px">',
-      '<strong style="font-size:12.5px;color:var(--accent)">✓ TROTE GUARDADO EN DÍA ' + state.day + ' (' + todaySavedRun.date + ')</strong>',
-      '<div style="display:flex;gap:6px">',
-      '<button type="button" class="chip-btn active" onclick="copyText(buildSummaryText(state.history.find(function(x){return x.id===' + todaySavedRun.id + ';})))">Copiar</button>',
-      '<button type="button" class="chip-btn danger" onclick="deleteHistoryRecord(' + todaySavedRun.id + ')">Limpiar</button>',
-      '</div>',
-      '</div>',
-      '<div class="summary-pre">' + buildSummaryText(todaySavedRun) + '</div>',
-      '</div>'
-    ].join('');
-  }
-
   container.innerHTML = [
     optSwitch,
-    savedRunSummaryHTML,
     '<section class="run-card">',
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">',
     '<div style="font-size:16px;font-weight:800">Trote Urbano</div>',
