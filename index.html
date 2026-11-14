@@ -899,6 +899,20 @@
     border-top: none;
     padding-top: 2px;
   }
+  .panel-row.stacked {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .panel-row.stacked .seg-group {
+    width: 100%;
+    display: flex;
+    gap: 6px;
+  }
+  .panel-row.stacked .seg-group .seg-btn {
+    flex: 1;
+    text-align: center;
+  }
   .panel-lbl {
     font-size: 12.5px;
     font-weight: 700;
@@ -3767,8 +3781,8 @@ function renderControlPanelView(container) {
   container.innerHTML = [
     '<section class="panel-section">',
     '<div class="panel-sec-title">',
-    '<span>⏱ Metrónomo de Tempo (Opción A)</span>',
-    '<button type="button" class="chip-btn ' + (state.metroEnabled ? 'active' : '') + '" onclick="toggleMetronome()">' + (state.metroEnabled ? '🔊 ACTIVO' : '🔇 INACTIVO') + '</button>',
+    '<span>Metrónomo de Tempo (Opción A)</span>',
+    '<button type="button" class="chip-btn ' + (state.metroEnabled ? 'active' : '') + '" onclick="toggleMetronome()">' + (state.metroEnabled ? 'ACTIVO' : 'INACTIVO') + '</button>',
     '</div>',
     '<div class="panel-row">',
     '<div><div class="panel-lbl">Intervalo del Pulso (Segundos)</div><div class="panel-sub">Emite un click guía durante la serie para contar tus bajadas y pausas.</div></div>',
@@ -3780,58 +3794,58 @@ function renderControlPanelView(container) {
     '</div>',
     '<div class="panel-row">',
     '<div class="panel-lbl">Sonido General de la App</div>',
-    '<button type="button" class="seg-btn ' + (state.sound ? 'active' : '') + '" onclick="state.sound=!state.sound;saveState();render();">' + (state.sound ? '🔊 Sonido ON' : '🔇 Silencio') + '</button>',
+    '<button type="button" class="seg-btn ' + (state.sound ? 'active' : '') + '" onclick="state.sound=!state.sound;saveState();render();">' + (state.sound ? 'Sonido ON' : 'Silencio') + '</button>',
     '</div>',
     '</section>',
 
     '<section class="panel-section">',
-    '<div class="panel-sec-title"><span>🔄 Configuración de Rutina y Series</span></div>',
-    '<div class="panel-row">',
-    '<div style="flex:1;min-width:0;padding-right:8px"><div class="panel-lbl">Orden Semanal de Fuerza</div><div class="panel-sub">Cambiarlo aquí no archiva la semana (solo "Reiniciar ⇄" cierra la semana).</div></div>',
+    '<div class="panel-sec-title"><span>Configuración de Rutina y Series</span></div>',
+    '<div class="panel-row stacked">',
+    '<div><div class="panel-lbl">Orden Semanal de Fuerza</div><div class="panel-sub">Cambiarlo aquí no archiva la semana (solo "Reiniciar Semana ⇄" cierra la semana).</div></div>',
     '<div class="seg-group nowrap">',
     '<button type="button" class="seg-btn ' + (state.weekPattern === 'ABA' ? 'active' : '') + '" onclick="toggleWeekPatternManual(\'ABA\')">A-B-A</button>',
     '<button type="button" class="seg-btn ' + (state.weekPattern === 'BAB' ? 'active' : '') + '" onclick="toggleWeekPatternManual(\'BAB\')">B-A-B</button>',
     '</div>',
     '</div>',
-    '<div class="panel-row">',
-    '<div style="flex:1;min-width:0;padding-right:8px"><div class="panel-lbl">Rutina A · Agarre Dominadas (Define B2)</div><div class="panel-sub">Prono/Neutro activa Curl Bíceps; Supino activa Elev. Laterales.</div></div>',
-    '<div class="seg-group">',
+    '<div class="panel-row stacked">',
+    '<div><div class="panel-lbl">Rutina A · Agarre Dominadas (Define B2)</div><div class="panel-sub">Prono/Neutro activa Curl Bíceps; Supino activa Elev. Laterales.</div></div>',
+    '<div class="seg-group nowrap">',
     '<button type="button" class="seg-btn ' + (state.gripA === 'prono' ? 'active' : '') + '" onclick="state.gripA=\'prono\';saveState();render();">Prono/Neutro → Bíceps</button>',
     '<button type="button" class="seg-btn ' + (state.gripA === 'supino' ? 'active' : '') + '" onclick="state.gripA=\'supino\';saveState();render();">Supino → Laterales</button>',
     '</div>',
     '</div>',
-    '<div class="panel-row">',
-    '<div style="flex:1;min-width:0;padding-right:8px"><div class="panel-lbl">Rutina B · Variante Tríceps (B2)</div><div class="panel-sub">Elige tu ejercicio de empuje de tríceps en Bloque B.</div></div>',
+    '<div class="panel-row stacked">',
+    '<div><div class="panel-lbl">Rutina B · Variante Tríceps (B2)</div><div class="panel-sub">Elige tu ejercicio de empuje de tríceps en Bloque B.</div></div>',
     '<div class="seg-group nowrap">',
     '<button type="button" class="seg-btn ' + (state.variantB2_B === 'diamante' ? 'active' : '') + '" onclick="state.variantB2_B=\'diamante\';saveState();render();">Diamante</button>',
     '<button type="button" class="seg-btn ' + (state.variantB2_B === 'fondos' ? 'active' : '') + '" onclick="state.variantB2_B=\'fondos\';saveState();render();">Fondos</button>',
     '</div>',
     '</div>',
-    '<div class="panel-row">',
-    '<div style="flex:1;min-width:0;padding-right:8px"><div class="panel-lbl">Series / Vueltas · Bloque A</div><div class="panel-sub">Actualiza en vivo el entrenamiento activo.</div></div>',
+    '<div class="panel-row stacked">',
+    '<div><div class="panel-lbl">Series / Vueltas · Bloque A</div><div class="panel-sub">Actualiza en vivo el entrenamiento activo.</div></div>',
     '<div class="seg-group nowrap">' + roundsA_HTML + '</div>',
     '</div>',
-    '<div class="panel-row">',
-    '<div style="flex:1;min-width:0;padding-right:8px"><div class="panel-lbl">Series / Vueltas · Bloque B</div><div class="panel-sub">Biserie Unilateral + Accesorio.</div></div>',
+    '<div class="panel-row stacked">',
+    '<div><div class="panel-lbl">Series / Vueltas · Bloque B</div><div class="panel-sub">Biserie Unilateral + Accesorio.</div></div>',
     '<div class="seg-group nowrap">' + roundsB_HTML + '</div>',
     '</div>',
-    '<div class="panel-row">',
-    '<div style="flex:1;min-width:0;padding-right:8px"><div class="panel-lbl">Series / Vueltas · Bloque C (Core)</div><div class="panel-sub">Crunches con disco o Elevaciones colgado.</div></div>',
+    '<div class="panel-row stacked">',
+    '<div><div class="panel-lbl">Series / Vueltas · Bloque C (Core)</div><div class="panel-sub">Crunches con disco o Elevaciones colgado.</div></div>',
     '<div class="seg-group nowrap">' + roundsC_HTML + '</div>',
     '</div>',
-    '<div class="panel-row">',
-    '<div style="flex:1;min-width:0;padding-right:8px"><div class="panel-lbl">Reiniciar Solo las Series de Hoy</div><div class="panel-sub">Limpia el progreso del día actual sin cerrar ni rotar la semana.</div></div>',
-    '<button type="button" class="seg-btn" onclick="resetOnlyCurrentDaySession(true)">↺ Reiniciar Hoy</button>',
+    '<div class="panel-row stacked">',
+    '<div><div class="panel-lbl">Reiniciar Solo las Series de Hoy</div><div class="panel-sub">Limpia el progreso del día actual sin cerrar ni rotar la semana.</div></div>',
+    '<div class="seg-group nowrap"><button type="button" class="seg-btn" onclick="resetOnlyCurrentDaySession(true)">↺ Reiniciar Hoy</button></div>',
     '</div>',
     '</section>',
 
     '<section class="panel-section">',
-    '<div class="panel-sec-title"><span>🏋️‍♂️ Cargas de Equipamiento (Vacío = Sugerido)</span></div>',
+    '<div class="panel-sec-title"><span>Cargas de Equipamiento (Vacío = Sugerido)</span></div>',
     equipInputsHTML,
     '</section>',
 
     '<section class="panel-section">',
-    '<div class="panel-sec-title"><span>⏳ Tiempos de Descanso (Segundos)</span></div>',
+    '<div class="panel-sec-title"><span>Tiempos de Descanso (Segundos)</span></div>',
     '<div class="panel-row"><span class="panel-lbl">Cambio de lado (Unilaterales)</span><input type="text" inputmode="numeric" class="weight-field" value="' + state.restConfig.unilateral + '" oninput="state.restConfig.unilateral=parseInt(this.value,10)||45;saveState();" onblur="clearIOSUndoStack(this)" /></div>',
     '<div class="panel-row"><span class="panel-lbl">Descanso Biserie Bloque A</span><input type="text" inputmode="numeric" class="weight-field" value="' + state.restConfig.blockA + '" oninput="state.restConfig.blockA=parseInt(this.value,10)||80;saveState();" onblur="clearIOSUndoStack(this)" /></div>',
     '<div class="panel-row"><span class="panel-lbl">Descanso Biserie Bloque B</span><input type="text" inputmode="numeric" class="weight-field" value="' + state.restConfig.blockB + '" oninput="state.restConfig.blockB=parseInt(this.value,10)||60;saveState();" onblur="clearIOSUndoStack(this)" /></div>',
