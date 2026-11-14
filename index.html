@@ -760,6 +760,28 @@
     outline: none;
     border-color: var(--accent);
   }
+  .run-date-bar {
+    background: var(--card-alt);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 10px 12px;
+    margin-bottom: 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .run-date-input {
+    background: var(--bg);
+    color: var(--text);
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    padding: 6px 8px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 700;
+  }
   .run-pace-result {
     background: var(--bg);
     border: 1px solid var(--border-strong);
@@ -1116,14 +1138,16 @@ var state = {
   manualExpandedBlocks: {},
   sessionLogs: {},
   sessionStartTime: null,
+  sessionCompletedToday: false,
   daySessions: {},         // Guarda el progreso en vivo de cada día de fuerza { [day]: {...} }
-  runDrafts: {},           // Guarda borradores no guardados de trote por día { [day]: { dist, time, kcal } }
+  runDrafts: {},           // Guarda borradores no guardados de trote por día { [day]: { dist, time, kcal, dateKey } }
   completedDays: {},
   confirmingClearAll: false,
-  // Trote Urbano (vacío en días no realizados, auto-formato 0.00 y 00:00)
+  // Trote Urbano (vacío en días no realizados, auto-formato 0.00 y 00:00 + selector de fecha)
   runDistStr: '',
   runTimeStr: '',
   runKcal: '',
+  runDateKey: '',
   // Historial de la semana actual + archivo de semanas cerradas + memoria de última vez por ejercicio
   history: [],
   archivedHistory: [],
@@ -1141,6 +1165,29 @@ function getTodayDateKey() {
   var m = String(now.getMonth() + 1).padStart(2, '0');
   var d = String(now.getDate()).padStart(2, '0');
   return y + '-' + m + '-' + d;
+}
+
+function getYesterdayDateKey() {
+  var d = new Date();
+  d.setDate(d.getDate() - 1);
+  var y = d.getFullYear();
+  var m = String(d.getMonth() + 1).padStart(2, '0');
+  var day = String(d.getDate()).padStart(2, '0');
+  return y + '-' + m + '-' + day;
+}
+
+function formatDateKeyForDisplay(dateKey) {
+  if (!dateKey || typeof dateKey !== 'string') {
+    return new Date().toLocaleDateString('es-CL', { day: '2-digit', month: 'short' });
+  }
+  var parts = dateKey.split('-');
+  if (parts.length !== 3) return dateKey;
+  var y = parseInt(parts[0], 10);
+  var m = parseInt(parts[1], 10) - 1;
+  var d = parseInt(parts[2], 10);
+  var dt = new Date(y, m, d, 12, 0, 0);
+  if (isNaN(dt.getTime())) return dateKey;
+  return dt.toLocaleDateString('es-CL', { day: '2-digit', month: 'short' });
 }
 
 function getCycleDays() {
@@ -1181,7 +1228,8 @@ function saveCurrentDaySnapshot() {
       expandedExId: state.expandedExId || null,
       manualExpandedBlocks: Object.assign({}, state.manualExpandedBlocks || {}),
       sessionLogs: JSON.parse(JSON.stringify(state.sessionLogs || {})),
-      sessionStartTime: state.sessionStartTime || null
+      sessionStartTime: state.sessionStartTime || null,
+      sessionCompletedToday: !!state.sessionCompletedToday
     };
   } else if (curType === 'run') {
     var cleanDist = (state.runDistStr === '0.00' || state.runDistStr === '0') ? '' : String(state.runDistStr || '');
@@ -1190,7 +1238,8 @@ function saveCurrentDaySnapshot() {
     state.runDrafts[state.day] = {
       distStr: cleanDist,
       timeStr: cleanTime,
-      kcal: cleanKcal
+      kcal: cleanKcal,
+      dateKey: state.runDateKey || getTodayDateKey()
     };
   }
 }
@@ -1198,12 +1247,13 @@ function saveCurrentDaySnapshot() {
 function getRunDraft(d) {
   var draft = state.runDrafts && state.runDrafts[d];
   if (!draft || typeof draft !== 'object') {
-    return { distStr: '', timeStr: '', kcal: '' };
+    return { distStr: '', timeStr: '', kcal: '', dateKey: getTodayDateKey() };
   }
   var dist = (draft.distStr === '0.00' || draft.distStr === '0') ? '' : String(draft.distStr || '');
   var time = (draft.timeStr === '00:00' || draft.timeStr === '0') ? '' : String(draft.timeStr || '');
   var kcal = draft.kcal === '0' ? '' : String(draft.kcal || '');
-  return { distStr: dist, timeStr: time, kcal: kcal };
+  var dKey = draft.dateKey || getTodayDateKey();
+  return { distStr: dist, timeStr: time, kcal: kcal, dateKey: dKey };
 }
 
 function restoreDaySnapshot(targetDay) {
@@ -1218,6 +1268,7 @@ function restoreDaySnapshot(targetDay) {
       state.sessionLogs = JSON.parse(JSON.stringify(snap.sessionLogs || {}));
       state.manualExpandedBlocks = Object.assign({}, snap.manualExpandedBlocks || {});
       state.sessionStartTime = snap.sessionStartTime || null;
+      state.sessionCompletedToday = !!snap.sessionCompletedToday;
       state.currentRIR = String(snap.currentRIR || '2');
       var activeStep = steps[state.stepIndex] || steps[0];
       state.currentReps = Number(snap.currentReps) || (activeStep ? activeStep.ex.defaultReps : 8);
@@ -1227,6 +1278,7 @@ function restoreDaySnapshot(targetDay) {
       state.sessionLogs = {};
       state.manualExpandedBlocks = {};
       state.sessionStartTime = null;
+      state.sessionCompletedToday = false;
       state.currentRIR = '2';
       if (steps[0]) {
         state.currentReps = steps[0].ex.defaultReps;
@@ -1367,6 +1419,8 @@ function loadState() {
         runDistStr: initDistStr,
         runTimeStr: initTimeStr,
         runKcal: initKcalStr,
+        runDateKey: preferredConfig.runDateKey || getTodayDateKey(),
+        sessionCompletedToday: !!preferredConfig.sessionCompletedToday,
         activeModal: null,
         confirmingClearAll: false
       });
@@ -1376,6 +1430,26 @@ function loadState() {
         mergedDays = (preferredConfig.completedDays && typeof preferredConfig.completedDays === 'object') ? preferredConfig.completedDays : {};
       }
     }
+
+    // Sanitiza cualquier registro histórico que haya guardado más series de las configuradas
+    mergedHistory.forEach(function(rec) {
+      if (rec && rec.type === 'strength' && rec.exercises) {
+        Object.keys(rec.exercises).forEach(function(exId) {
+          var exObj = rec.exercises[exId];
+          if (exObj && Array.isArray(exObj.sets)) {
+            var bySet = {};
+            exObj.sets.forEach(function(st) {
+              var sNum = Number(st.set) || 1;
+              bySet[sNum] = st;
+            });
+            var cleanSets = Object.keys(bySet).map(function(k) { return bySet[k]; }).sort(function(a, b) {
+              return (Number(a.set) || 0) - (Number(b.set) || 0);
+            });
+            exObj.sets = cleanSets;
+          }
+        });
+      }
+    });
 
     state.history = mergedHistory;
     state.archivedHistory = mergedArchived;
@@ -1430,12 +1504,14 @@ function saveState() {
       manualExpandedBlocks: state.manualExpandedBlocks,
       sessionLogs: state.sessionLogs,
       sessionStartTime: state.sessionStartTime,
+      sessionCompletedToday: state.sessionCompletedToday,
       daySessions: state.daySessions,
       runDrafts: state.runDrafts,
       completedDays: state.completedDays,
       runDistStr: state.runDistStr,
       runTimeStr: state.runTimeStr,
       runKcal: state.runKcal,
+      runDateKey: state.runDateKey,
       history: state.history,
       archivedHistory: state.archivedHistory,
       lastExerciseRecords: state.lastExerciseRecords
@@ -1444,7 +1520,7 @@ function saveState() {
 }
 
 /* ============================================================================
-   2. DEFINICIÓN DE RUTINAS, BLOQUES Y EQUIPAMIENTO (NOMBRES LIMPIOS)
+   2. DEFINICIÓN DE RUTINAS, BLOQUES Y EQUIPAMIENTO (PROGRAMA v3)
    ============================================================================ */
 function getEffectiveWeight(weightKey, defaultWeight) {
   if (!weightKey) return 0;
@@ -1457,11 +1533,12 @@ function getEffectiveWeight(weightKey, defaultWeight) {
 
 function getAllEquipmentCatalog() {
   return [
-    { key: 'bulgara_db', name: 'Mancuerna Búlgara (Rutina A · B1)', defaultWeight: 13.6, plates: '1×10lb + 1×2kg por lado (13,6 kg) o 1×1,5kg (12,6 kg)' },
-    { key: 'curl_db',    name: 'Par Mancuernas Bíceps (Rutina A · B2)', defaultWeight: 7.5, plates: '2×2,5kg + 2×1,25kg por barra (7,5 kg c/u)' },
-    { key: 'lat_db',     name: 'Par Mancuernas Laterales (Rutina A · B2)', defaultWeight: 3.0, plates: '1×1,5kg por lado (3 kg) o 1×2kg (4 kg)' },
-    { key: 'crunch_plate', name: 'Disco Libre Crunches (Rutina A · C)', defaultWeight: 4.5, plates: 'Disco de 10 lbs (4,5 kg) o 2,5 kg al esternón' },
-    { key: 'kb_heavy',   name: 'Kettlebell Ajustable (Rutina B · A1 y B1)', defaultWeight: 16.7, plates: 'Tope mango: 3×10lb + 1×2,5kg + mango (16,7 kg)' }
+    { key: 'bulgara_kb_v3',   name: 'Kettlebell Sentadilla Búlgara (Rutina A · B1)', defaultWeight: 15.7, plates: '3 discos de 10 lbs + 1 disco de 1,5 kg + mango (~15,7 kg)' },
+    { key: 'curl_db_v3',      name: 'Par Mancuernas Curl Bíceps (Rutina A · B2)',    defaultWeight: 9.5,  plates: '1 disco de 2,5 kg + 1 disco de 2,0 kg por lado + barra (~9,5 kg c/u)' },
+    { key: 'lat_db_v3',       name: 'Par Mancuernas Elev. Laterales (Rutina A · B2)', defaultWeight: 4.5, plates: '1 disco de 2,0 kg por lado + barra (~4,5 kg c/u)' },
+    { key: 'crunch_plate_v3', name: 'Sobrecarga Crunches (Rutina A · C)',            defaultWeight: 6.0,  plates: '1 disco de 10 lbs (4,54 kg) + 1 o 2 discos de 1,5 kg (~6,0–7,5 kg)' },
+    { key: 'rdl_db_v3',       name: 'Par Mancuernas Pesadas RDL B-Stance (Rutina B · A1)', defaultWeight: 30.2, plates: '2 mancuernas de 15,1 kg c/u (~30,2 kg totales): 1×10lb + 1×1,5kg + 1×1,25kg por lado' },
+    { key: 'row_db_v3',       name: 'Mancuerna Pesada Remo Unilateral (Rutina B · B1)',    defaultWeight: 15.1, plates: '1 mancuerna de 15,1 kg: 1×10lb + 1×1,5kg + 1×1,25kg por lado + barra' }
   ];
 }
 
@@ -1474,7 +1551,8 @@ function getRoutineData(routineType) {
   if (routineType === 'routineA') {
     var isProno = state.gripA === 'prono';
     return {
-      title: 'Rutina A · Tracción V, Empuje H y Cuádriceps',
+      routineType: 'routineA',
+      title: 'Rutina A · Tracción V, Empuje H Profundo y Cuádriceps Unilateral',
       shortName: 'Rutina A',
       duration: '35–40 min',
       blocks: [
@@ -1492,12 +1570,13 @@ function getRoutineData(routineType) {
               minReps: 6,
               maxReps: 10,
               defaultReps: 8,
+              sets: rA,
               unilateral: false,
               weightKey: null,
               defaultWeight: 0,
               restAfter: rc.blockA,
               tempo: 'Bajada 2s · Subida explosiva',
-              cue: 'Pecho busca la barra. Escápulas deprimidas antes de traccionar; baja en 2s controlados.',
+              cue: 'Alternar Prono/Neutro y Supino sesión por medio. Bajada controlada en 2 s. Descanso: 75–90 s.',
               diagram: 'pullup',
               primaryMuscles: 'Dorsal ancho, Redondo mayor, Braquial',
               secMuscles: 'Core, Bíceps, Romboides'
@@ -1505,16 +1584,17 @@ function getRoutineData(routineType) {
             {
               id: 'A2_push',
               code: 'A2',
-              name: 'Flexiones profundas en manillas',
+              name: 'Flexiones profundas en manillas (pies elevados en silla)',
               minReps: 8,
               maxReps: 12,
               defaultReps: 10,
+              sets: rA === 4 ? 3 : rA,
               unilateral: false,
               weightKey: null,
               defaultWeight: 0,
               restAfter: rc.blockA,
-              tempo: '2s bajada · 1s pausa abajo',
-              cue: 'Codos a 45° (flecha). El pecho desciende más abajo del nivel de las manillas con 1s de pausa.',
+              tempo: '3s bajada · 2s pausa abajo',
+              cue: 'Pies elevados en silla. Codos a 45° (flecha). Banda elástica cruzada o bajada en 3 s + pausa de 2 s abajo.',
               diagram: 'pushup_deep',
               primaryMuscles: 'Pectoral mayor, Deltoides ant.',
               secMuscles: 'Tríceps, Serrato, Core'
@@ -1531,18 +1611,19 @@ function getRoutineData(routineType) {
             {
               id: 'B1_bulg',
               code: 'B1',
-              name: 'Sentadilla Búlgara Contralateral',
+              name: 'Sentadilla Búlgara Contralateral con Kettlebell',
               minReps: 8,
-              maxReps: 10,
-              defaultReps: 9,
+              maxReps: 12,
+              defaultReps: 10,
+              sets: rB,
               unilateral: true,
               limbLabels: ['Pierna Izquierda', 'Pierna Derecha'],
               restBetweenLimbs: rc.unilateral,
-              weightKey: 'bulgara_db',
-              defaultWeight: 13.6,
+              weightKey: 'bulgara_kb_v3',
+              defaultWeight: 15.7,
               restAfter: rc.blockB,
               tempo: 'Bajada controlada 2s',
-              cue: 'Mancuerna en la mano contraria a la pierna adelantada. Torso levemente inclinado.',
+              cue: 'Sostener la kettlebell (15,7 kg) en la mano opuesta a la pierna adelantada. Bajada en 2 s.',
               diagram: 'bulgarian',
               primaryMuscles: 'Cuádriceps, Glúteo mayor',
               secMuscles: 'Glúteo medio (estabilidad)'
@@ -1550,32 +1631,34 @@ function getRoutineData(routineType) {
             isProno ? {
               id: 'B2_curl',
               code: 'B2',
-              name: 'Curl de Bíceps con Mancuernas',
+              name: 'Curl de bíceps con mancuernas',
               minReps: 10,
               maxReps: 12,
               defaultReps: 11,
+              sets: rB,
               unilateral: false,
-              weightKey: 'curl_db',
-              defaultWeight: 7.5,
+              weightKey: 'curl_db_v3',
+              defaultWeight: 9.5,
               restAfter: rc.blockB,
               tempo: '1s subida · 2s bajada',
-              cue: 'Codos fijos pegados a las costillas. Supinación completa sin balancear la espalda.',
+              cue: 'Mancuernas de 9,5 kg c/u. Codos fijos a las costillas, bajada en 2 s sin balanceo.',
               diagram: 'curl',
               primaryMuscles: 'Bíceps braquial, Braquial anterior',
               secMuscles: 'Supinador largo'
             } : {
               id: 'B2_lat',
               code: 'B2',
-              name: 'Elevaciones Laterales',
+              name: 'Elevaciones laterales con mancuernas',
               minReps: 12,
               maxReps: 15,
               defaultReps: 13,
+              sets: rB,
               unilateral: false,
-              weightKey: 'lat_db',
-              defaultWeight: 3.0,
+              weightKey: 'lat_db_v3',
+              defaultWeight: 4.5,
               restAfter: rc.blockB,
               tempo: 'Pausa breve arriba · 2s bajada',
-              cue: 'Eleva en el plano escapular (30° adelante) hasta nivel del hombro sin impulso.',
+              cue: 'Mancuernas de 4,5 kg c/u. Eleva en el plano escapular sin inercia.',
               diagram: 'lateral',
               primaryMuscles: 'Deltoides lateral',
               secMuscles: 'Trapecio superior'
@@ -1592,16 +1675,17 @@ function getRoutineData(routineType) {
             {
               id: 'C_crunch',
               code: 'C',
-              name: 'Crunches con Disco al Esternón',
+              name: 'Crunches con disco al esternón',
               minReps: 12,
               maxReps: 15,
-              defaultReps: 14,
+              defaultReps: 13,
+              sets: rC,
               unilateral: false,
-              weightKey: 'crunch_plate',
-              defaultWeight: 4.5,
+              weightKey: 'crunch_plate_v3',
+              defaultWeight: 6.0,
               restAfter: rc.coreA,
-              tempo: '2s pausa arriba · 3s bajada',
-              cue: 'Disco firme al pecho. Enrolla vértebra por vértebra exhalando 2s arriba; desciende en 3s.',
+              tempo: '2s pausa arriba · 3–4s bajada',
+              cue: 'Sobrecarga de 6,0–7,5 kg. Pausa isométrica de 2 s arriba expulsando el aire y bajada en 3–4 s.',
               diagram: 'crunch',
               primaryMuscles: 'Recto abdominal',
               secMuscles: 'Oblicuos internos'
@@ -1614,7 +1698,8 @@ function getRoutineData(routineType) {
 
   var isDiamante = state.variantB2_B === 'diamante';
   return {
-    title: 'Rutina B · Cadena Post., Tracción H y Empuje V',
+    routineType: 'routineB',
+    title: 'Rutina B · Cadena Post. Unilateral, Tracción H y Empuje V',
     shortName: 'Rutina B',
     duration: '35–40 min',
     blocks: [
@@ -1622,24 +1707,25 @@ function getRoutineData(routineType) {
         id: 'blockA_B',
         name: 'Bloque A · Biserie Cadera + Hombro Vertical',
         type: 'biserie',
-        rounds: rA,
+        rounds: 3,
         transitionRest: rc.transition,
         exercises: [
           {
             id: 'B_A1_rdl',
             code: 'A1',
-            name: 'Peso Muerto Rumano B-Stance con Kettlebell',
+            name: 'Peso Muerto Rumano B-Stance (2 Mancuernas)',
             minReps: 8,
-            maxReps: 10,
-            defaultReps: 9,
+            maxReps: 12,
+            defaultReps: 10,
+            sets: rA,
             unilateral: true,
             limbLabels: ['Pierna Izquierda', 'Pierna Derecha'],
             restBetweenLimbs: rc.unilateral,
-            weightKey: 'kb_heavy',
-            defaultWeight: 16.7,
+            weightKey: 'rdl_db_v3',
+            defaultWeight: 30.2,
             restAfter: Math.max(30, rc.blockA - 10),
-            tempo: 'Bisagra 2s · Empuje de talón',
-            cue: 'Puntera trasera a la altura del talón delantero solo de apoyo. Cadera viaja atrás.',
+            tempo: 'Bajada 2–3s · Columna neutra',
+            cue: '2 mancuernas de 15,1 kg (30,2 kg totales). Pierna retrasada en punta de pie; 90% de carga en talón delantero. Bajada en 2–3 s.',
             diagram: 'rdl_bstance',
             primaryMuscles: 'Isquiosurales, Glúteo mayor',
             secMuscles: 'Erectores espinales, Core'
@@ -1647,16 +1733,17 @@ function getRoutineData(routineType) {
           {
             id: 'B_A2_pike',
             code: 'A2',
-            name: 'Pike Push-ups en Manillas',
+            name: 'Pike Push-ups en manillas (pies elevados)',
             minReps: 8,
-            maxReps: 10,
-            defaultReps: 9,
+            maxReps: 12,
+            defaultReps: 10,
+            sets: rA,
             unilateral: false,
             weightKey: null,
             defaultWeight: 0,
             restAfter: rc.blockA,
             tempo: 'Trípode 2s bajada · Empuje V',
-            cue: 'Cadera alta en V invertida. La cabeza baja por delante de las manillas formando un triángulo.',
+            cue: 'Pies elevados. Manillas a 30°–45°. Cadera alta en V invertida; la cabeza baja por delante formando un trípode.',
             diagram: 'pike',
             primaryMuscles: 'Deltoides anterior y medio, Tríceps',
             secMuscles: 'Trapecio superior, Serrato'
@@ -1673,18 +1760,19 @@ function getRoutineData(routineType) {
           {
             id: 'B_B1_row',
             code: 'B1',
-            name: 'Remo Unilateral con Kettlebell',
-            minReps: 8,
-            maxReps: 10,
-            defaultReps: 9,
+            name: 'Remo unilateral con mancuerna',
+            minReps: 10,
+            maxReps: 12,
+            defaultReps: 11,
+            sets: rB,
             unilateral: true,
             limbLabels: ['Brazo Izquierdo', 'Brazo Derecho'],
             restBetweenLimbs: rc.unilateral,
-            weightKey: 'kb_heavy',
-            defaultWeight: 16.7,
+            weightKey: 'row_db_v3',
+            defaultWeight: 15.1,
             restAfter: rc.blockB,
-            tempo: '1s tracción a cadera · 2s bajada',
-            cue: 'Torso paralelo al suelo apoyado en silla. Lleva el codo hacia el bolsillo sin rotar el tronco.',
+            tempo: '1s pausa arriba · 2s bajada',
+            cue: '1 mancuerna de 15,1 kg. Apoyo en silla, torso paralelo al suelo. Tirar codo a la cadera con 1 s de pausa arriba y bajada en 2 s.',
             diagram: 'kb_row',
             primaryMuscles: 'Dorsal ancho, Romboides, Deltoides post.',
             secMuscles: 'Bíceps, Core anti-rotación'
@@ -1692,18 +1780,19 @@ function getRoutineData(routineType) {
           {
             id: isDiamante ? 'B_B2_diam' : 'B_B2_dips',
             code: 'B2',
-            name: isDiamante ? 'Flexiones Diamante en Manillas' : 'Fondos entre Sillas (Dips)',
-            minReps: 10,
+            name: isDiamante ? 'Flexiones diamante en manillas (pies elevados)' : 'Fondos entre sillas (Dips)',
+            minReps: 8,
             maxReps: 12,
-            defaultReps: 11,
+            defaultReps: 10,
+            sets: rB,
             unilateral: false,
             weightKey: null,
             defaultWeight: 0,
             restAfter: rc.blockB,
-            tempo: '2s bajada · Bloqueo arriba',
+            tempo: isDiamante ? 'Pies elevados · 2s bajada' : 'Pausa 2s abajo · Bloqueo arriba',
             cue: isDiamante
-              ? 'Manillas juntas y codos cerrados rozando el torso. Extensión completa arriba.'
-              : 'Hombros deprimidos lejos de las orejas, codos hacia atrás y bloqueo firme arriba.',
+              ? 'Pies elevados en silla, manillas juntas y codos cerrados rozando el torso.'
+              : 'En fondos entre sillas, aplicar pausa de 2 s abajo o lastre con hombros deprimidos.',
             diagram: isDiamante ? 'diamond' : 'dips',
             primaryMuscles: 'Tríceps braquial',
             secMuscles: 'Pectoral interno, Deltoides ant.'
@@ -1712,7 +1801,7 @@ function getRoutineData(routineType) {
       },
       {
         id: 'blockC_B',
-        name: 'Bloque C · Core y Descompresión',
+        name: 'Bloque C · Core Anti-extensión',
         type: 'single',
         rounds: rC,
         transitionRest: 0,
@@ -1720,16 +1809,17 @@ function getRoutineData(routineType) {
           {
             id: 'B_C_hang',
             code: 'C',
-            name: 'Elevaciones de Rodillas Colgado',
+            name: 'Elevaciones de rodillas colgado en barra',
             minReps: 10,
             maxReps: 12,
             defaultReps: 11,
+            sets: rC,
             unilateral: false,
             weightKey: null,
             defaultWeight: 0,
             restAfter: rc.coreB,
             tempo: 'Basculación pélvica · 2s bajada',
-            cue: 'Colgado en barra sin balanceo. Sube las rodillas enrollando la pelvis hacia el esternón.',
+            cue: 'Basculación pélvica controlada hacia el pecho y bajada lenta en 2 s sin balanceo.',
             diagram: 'hanging_knee',
             primaryMuscles: 'Recto abdominal inferior, Flexores cadera',
             secMuscles: 'Agarre antebrazo, Dorsal'
@@ -1740,13 +1830,27 @@ function getRoutineData(routineType) {
   };
 }
 
+function getExerciseTargetSets(block, ex) {
+  return Number(ex.sets) || Number(block.rounds) || 3;
+}
+
 function buildStepsForRoutine(routineData) {
   var steps = [];
   routineData.blocks.forEach(function(block, bIdx) {
-    for (var r = 1; r <= block.rounds; r++) {
-      block.exercises.forEach(function(ex, eIdx) {
-        var isLastExInBlock = eIdx === block.exercises.length - 1;
-        var isLastRound = r === block.rounds;
+    var maxRounds = block.rounds;
+    block.exercises.forEach(function(ex) {
+      var exSets = getExerciseTargetSets(block, ex);
+      if (exSets > maxRounds) maxRounds = exSets;
+    });
+
+    for (var r = 1; r <= maxRounds; r++) {
+      var activeExInRound = block.exercises.filter(function(ex) {
+        return r <= getExerciseTargetSets(block, ex);
+      });
+      activeExInRound.forEach(function(ex, eIdx) {
+        var exTotalSets = getExerciseTargetSets(block, ex);
+        var isLastExInRound = eIdx === activeExInRound.length - 1;
+        var isLastRound = r === maxRounds;
         var isLastBlock = bIdx === routineData.blocks.length - 1;
 
         if (ex.unilateral) {
@@ -1754,7 +1858,7 @@ function buildStepsForRoutine(routineData) {
             blockId: block.id,
             blockName: block.name,
             round: r,
-            totalRounds: block.rounds,
+            totalRounds: exTotalSets,
             ex: ex,
             limbIndex: 0,
             limbLabel: ex.limbLabels[0],
@@ -1763,7 +1867,7 @@ function buildStepsForRoutine(routineData) {
           });
           var nextRest = ex.restAfter;
           var rLabel = 'Transición Biserie (' + ex.restAfter + 's)';
-          if (isLastExInBlock && isLastRound) {
+          if (isLastExInRound && isLastRound) {
             nextRest = isLastBlock ? 0 : block.transitionRest;
             rLabel = isLastBlock ? 'Fin de sesión' : 'Pausa Fin de Bloque (' + nextRest + 's)';
           }
@@ -1771,7 +1875,7 @@ function buildStepsForRoutine(routineData) {
             blockId: block.id,
             blockName: block.name,
             round: r,
-            totalRounds: block.rounds,
+            totalRounds: exTotalSets,
             ex: ex,
             limbIndex: 1,
             limbLabel: ex.limbLabels[1],
@@ -1783,7 +1887,7 @@ function buildStepsForRoutine(routineData) {
           var rLabel2 = block.type === 'biserie'
             ? 'Descanso Biserie (' + ex.restAfter + 's)'
             : 'Descanso Serie (' + ex.restAfter + 's)';
-          if (isLastExInBlock && isLastRound) {
+          if (isLastExInRound && isLastRound) {
             nextRest2 = isLastBlock ? 0 : block.transitionRest;
             rLabel2 = isLastBlock ? 'Fin de sesión' : 'Pausa Fin de Bloque (' + nextRest2 + 's)';
           }
@@ -1791,7 +1895,7 @@ function buildStepsForRoutine(routineData) {
             blockId: block.id,
             blockName: block.name,
             round: r,
-            totalRounds: block.rounds,
+            totalRounds: exTotalSets,
             ex: ex,
             limbIndex: null,
             limbLabel: null,
@@ -1972,7 +2076,44 @@ function getLastExerciseRecord(exId) {
   return null;
 }
 
-/* Sugerencia en vivo Serie a Serie basada en lo que acabas de hacer HOY */
+/* Evalúa si el promedio de series efectivas superó el techo del rango en RIR 1-2 (Sección 4.1 v3) */
+function shouldFlagExerciseProgression(maxReps, sets) {
+  if (!maxReps || !Array.isArray(sets) || sets.length === 0) return false;
+  var numericReps = [];
+  var allValidRIR = true;
+
+  sets.forEach(function(st) {
+    if (!st || st.reps === undefined || st.reps === null) return;
+    var rStr = String(st.reps);
+    var val = 0;
+    if (rStr.indexOf('/') !== -1) {
+      var parts = rStr.split('/');
+      var l = parseInt(parts[0], 10);
+      var r = parseInt(parts[1], 10);
+      if (!isNaN(l) && !isNaN(r)) {
+        val = (l + r) / 2;
+      } else if (!isNaN(l)) {
+        val = l;
+      }
+    } else {
+      val = parseFloat(rStr);
+    }
+    if (!isNaN(val) && val > 0) {
+      numericReps.push(val);
+    }
+    var rirStr = String(st.rir || '2');
+    if (rirStr === '0') {
+      allValidRIR = false;
+    }
+  });
+
+  if (numericReps.length === 0 || !allValidRIR) return false;
+  var sum = numericReps.reduce(function(a, b) { return a + b; }, 0);
+  var avg = sum / numericReps.length;
+  return avg > Number(maxReps);
+}
+
+/* Regla de Autorregulación Intra-Serie y Progresión (Sección 4.1 v3) */
 function getOverloadSuggestion(ex) {
   var logsToday = (state.sessionLogs && state.sessionLogs[ex.id]) ? state.sessionLogs[ex.id] : [];
   var completedToday = logsToday.filter(function(s) {
@@ -1985,7 +2126,14 @@ function getOverloadSuggestion(ex) {
   if (completedToday.length === 0) {
     return {
       type: 'steady',
-      label: 'Meta hoy: ' + ex.minReps + '–' + ex.maxReps + ' reps @ RIR 1–2'
+      label: 'Guia: ' + ex.minReps + '-' + ex.maxReps + ' reps @ RIR 1-2 (si llegas al tope con RIR 3+, sigue hasta RIR 1-2)'
+    };
+  }
+
+  if (shouldFlagExerciseProgression(ex.maxReps, completedToday)) {
+    return {
+      type: 'up',
+      label: '↑ Promedio sobre ' + ex.maxReps + ' reps @ RIR 1-2: [Subir carga / dificultad en proxima sesion]'
     };
   }
 
@@ -1995,16 +2143,10 @@ function getOverloadSuggestion(ex) {
     : Number(lastSet.reps) || 0;
   var rir = String(lastSet.rir || '2');
 
-  if (rir === '3+' && reps < ex.maxReps) {
+  if (rir === '3+') {
     return {
       type: 'up',
-      label: '↑ Quedó margen (RIR 3+): Sube +1 o +2 reps en esta serie'
-    };
-  }
-  if (rir === '3+' && reps >= ex.maxReps) {
-    return {
-      type: 'up',
-      label: '↑ Carga liviana hoy: Busca +1–2 reps sobre el rango (evalúa subir kg)'
+      label: '↑ RIR 3+ en serie previa: No cortes en ' + ex.maxReps + ' reps, continúa la serie hasta alcanzar RIR 1–2'
     };
   }
   if ((rir === '1' || rir === '2') && reps >= ex.minReps) {
@@ -2021,7 +2163,7 @@ function getOverloadSuggestion(ex) {
   }
   return {
     type: 'hold',
-    label: '↓ Bajo el rango mínimo: Baja 1–2 kg o prioriza técnica'
+    label: '↓ Bajo el rango mínimo: Prioriza técnica controlada @ RIR 1–2'
   };
 }
 
@@ -2214,10 +2356,11 @@ function finishRestAndAdvance() {
    ============================================================================ */
 function isBlockCompleted(block, logs) {
   return block.exercises.every(function(ex) {
+    var targetSets = getExerciseTargetSets(block, ex);
     var exSets = (logs && logs[ex.id]) ? logs[ex.id] : [];
-    if (exSets.length < block.rounds) return false;
+    if (exSets.length < targetSets) return false;
     if (ex.unilateral) {
-      return exSets.slice(0, block.rounds).every(function(s) {
+      return exSets.slice(0, targetSets).every(function(s) {
         return s.rightReps !== null && s.rightReps !== undefined;
       });
     }
@@ -2253,6 +2396,11 @@ function handlePrimaryAction() {
     return;
   }
 
+  if (state.sessionCompletedToday) {
+    showToast('✓ La rutina de hoy ya fue completada (usa Reiniciar Hoy en Panel si deseas repetirla)');
+    return;
+  }
+
   var rData = getRoutineData(effectiveType);
   var steps = buildStepsForRoutine(rData);
   var curStep = steps[state.stepIndex];
@@ -2261,22 +2409,27 @@ function handlePrimaryAction() {
   if (!state.sessionStartTime) state.sessionStartTime = Date.now();
 
   var ex = curStep.ex;
+  var roundNum = Number(curStep.round) || 1;
+  var maxAllowedSets = Number(curStep.totalRounds) || 3;
   var usedWeight = ex.weightKey ? getEffectiveWeight(ex.weightKey, ex.defaultWeight) : 0;
 
-  if (!state.sessionLogs[ex.id]) state.sessionLogs[ex.id] = [];
+  if (!Array.isArray(state.sessionLogs[ex.id])) state.sessionLogs[ex.id] = [];
+
+  var existingEntry = state.sessionLogs[ex.id].find(function(s) {
+    return Number(s.set) === roundNum;
+  });
 
   if (ex.unilateral) {
     if (curStep.limbIndex === 0) {
-      var existingLeft = state.sessionLogs[ex.id].find(function(s) { return s.set === curStep.round; });
-      if (existingLeft) {
-        existingLeft.leftReps = state.currentReps;
-        existingLeft.rightReps = null;
-        existingLeft.reps = state.currentReps + '/-';
-        existingLeft.rir = state.currentRIR;
-        existingLeft.weight = usedWeight;
+      if (existingEntry) {
+        existingEntry.leftReps = state.currentReps;
+        existingEntry.rightReps = null;
+        existingEntry.reps = state.currentReps + '/-';
+        existingEntry.rir = state.currentRIR;
+        existingEntry.weight = usedWeight;
       } else {
         state.sessionLogs[ex.id].push({
-          set: curStep.round,
+          set: roundNum,
           leftReps: state.currentReps,
           rightReps: null,
           reps: state.currentReps + '/-',
@@ -2285,15 +2438,18 @@ function handlePrimaryAction() {
         });
       }
     } else {
-      var existing = state.sessionLogs[ex.id].find(function(s) { return s.set === curStep.round; });
-      if (existing) {
-        existing.rightReps = state.currentReps;
-        existing.reps = existing.leftReps + '/' + state.currentReps;
-        existing.rir = state.currentRIR;
-        existing.weight = usedWeight;
+      if (existingEntry) {
+        var leftVal = (existingEntry.leftReps !== null && existingEntry.leftReps !== undefined)
+          ? existingEntry.leftReps
+          : state.currentReps;
+        existingEntry.leftReps = leftVal;
+        existingEntry.rightReps = state.currentReps;
+        existingEntry.reps = leftVal + '/' + state.currentReps;
+        existingEntry.rir = state.currentRIR;
+        existingEntry.weight = usedWeight;
       } else {
         state.sessionLogs[ex.id].push({
-          set: curStep.round,
+          set: roundNum,
           leftReps: state.currentReps,
           rightReps: state.currentReps,
           reps: state.currentReps + '/' + state.currentReps,
@@ -2303,20 +2459,33 @@ function handlePrimaryAction() {
       }
     }
   } else {
-    var existingSingle = state.sessionLogs[ex.id].find(function(s) { return s.set === curStep.round; });
-    if (existingSingle) {
-      existingSingle.reps = state.currentReps;
-      existingSingle.rir = state.currentRIR;
-      existingSingle.weight = usedWeight;
+    if (existingEntry) {
+      existingEntry.reps = state.currentReps;
+      existingEntry.rir = state.currentRIR;
+      existingEntry.weight = usedWeight;
     } else {
       state.sessionLogs[ex.id].push({
-        set: curStep.round,
+        set: roundNum,
         reps: state.currentReps,
         rir: state.currentRIR,
         weight: usedWeight
       });
     }
   }
+
+  // Deduplica y limita estrictamente las series de este ejercicio a su número de vueltas configurado
+  var dedupMap = {};
+  state.sessionLogs[ex.id].forEach(function(sObj) {
+    var sN = Number(sObj.set) || 1;
+    if (sN >= 1 && sN <= maxAllowedSets) {
+      dedupMap[sN] = sObj;
+    }
+  });
+  state.sessionLogs[ex.id] = Object.keys(dedupMap).map(function(k) {
+    return dedupMap[k];
+  }).sort(function(a, b) {
+    return (Number(a.set) || 0) - (Number(b.set) || 0);
+  });
 
   saveState();
   playBeep(784, 0.12, 'sine');
@@ -2328,11 +2497,13 @@ function handlePrimaryAction() {
   }
 }
 
+/* Evita que un trote sobrescriba una sesión de fuerza de la misma fecha */
 function upsertHistoryRecord(newRecord) {
   var existingIdx = state.history.findIndex(function(h) {
-    return h.dateKey && newRecord.dateKey &&
-           h.dateKey === newRecord.dateKey &&
-           h.type === newRecord.type;
+    if (!h || h.type !== newRecord.type) return false;
+    if (h.day && newRecord.day && Number(h.day) === Number(newRecord.day)) return true;
+    if (h.dateKey && newRecord.dateKey && h.dateKey === newRecord.dateKey) return true;
+    return false;
   });
 
   if (existingIdx !== -1) {
@@ -2352,7 +2523,19 @@ function completeStrengthWorkout(rData) {
   var exSummary = {};
   rData.blocks.forEach(function(b) {
     b.exercises.forEach(function(ex) {
-      var sets = state.sessionLogs[ex.id] || [];
+      var targetSets = getExerciseTargetSets(b, ex);
+      var rawSets = state.sessionLogs[ex.id] || [];
+      var bySet = {};
+      rawSets.forEach(function(s) {
+        var sNum = Number(s.set) || 1;
+        if (sNum >= 1 && sNum <= targetSets) {
+          bySet[sNum] = s;
+        }
+      });
+      var cleanSets = Object.keys(bySet).map(function(k) { return bySet[k]; }).sort(function(a, b) {
+        return (Number(a.set) || 0) - (Number(b.set) || 0);
+      });
+
       var w = ex.weightKey ? getEffectiveWeight(ex.weightKey, ex.defaultWeight) + ' kg' : 'PC';
       var exEntry = {
         id: ex.id,
@@ -2361,10 +2544,10 @@ function completeStrengthWorkout(rData) {
         minReps: ex.minReps,
         maxReps: ex.maxReps,
         weight: w,
-        sets: sets
+        sets: cleanSets
       };
       exSummary[ex.id] = exEntry;
-      if (sets.length > 0) {
+      if (cleanSets.length > 0) {
         state.lastExerciseRecords[ex.id] = exEntry;
       }
     });
@@ -2373,8 +2556,9 @@ function completeStrengthWorkout(rData) {
   var record = {
     id: Date.now(),
     dateKey: getTodayDateKey(),
-    date: new Date().toLocaleDateString('es-CL', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }),
+    date: new Date().toLocaleDateString('es-CL', { day: '2-digit', month: 'short' }),
     day: state.day,
+    routineType: rData.routineType || (rData.shortName === 'Rutina B' ? 'routineB' : 'routineA'),
     weekPattern: state.weekPattern,
     type: 'strength',
     title: rData.title,
@@ -2383,6 +2567,7 @@ function completeStrengthWorkout(rData) {
     exercises: exSummary
   };
 
+  state.sessionCompletedToday = true;
   upsertHistoryRecord(record);
   state.completedDays[state.day] = true;
   saveState();
@@ -2461,6 +2646,7 @@ function resetOnlyCurrentDaySession(showFeedback) {
   state.sessionLogs = {};
   state.manualExpandedBlocks = {};
   state.sessionStartTime = null;
+  state.sessionCompletedToday = false;
   if (state.daySessions) delete state.daySessions[state.day];
   if (state.runDrafts) delete state.runDrafts[state.day];
 
@@ -2476,6 +2662,7 @@ function resetOnlyCurrentDaySession(showFeedback) {
     state.runDistStr = '';
     state.runTimeStr = '';
     state.runKcal = '';
+    state.runDateKey = getTodayDateKey();
   }
   saveState();
   syncMetronomeLoop();
@@ -2542,13 +2729,21 @@ function formatPaceFromRun(distStr, timeStr) {
   var secPerKm = Math.round(totalSec / d);
   var pMin = Math.floor(secPerKm / 60);
   var pSec = secPerKm % 60;
-  var optimal = secPerKm >= 335 && secPerKm <= 365 && d >= 4.8 && d <= 6.8;
+  // Parámetros v3: Ritmo de referencia 5:30 - 6:00 min/km (330 a 360 s/km)
+  var optimal = secPerKm >= 330 && secPerKm <= 360;
   return {
     text: pMin + "'" + String(pSec).padStart(2, '0') + '" /km',
     secPerKm: secPerKm,
     optimal: optimal,
     empty: false
   };
+}
+
+function estimateNetRunKcal(distStr) {
+  var d = parseFloat(String(distStr || '').replace(',', '.'));
+  if (!d || d <= 0) return 0;
+  // Gasto energético neto estimado v3: ~1,0 kcal/kg/km (~74 kg -> ~475-520 kcal para 6,5-7,0 km)
+  return Math.round(d * 74);
 }
 
 function updateLiveRunPaceDisplay() {
@@ -2562,9 +2757,27 @@ function updateLiveRunPaceDisplay() {
       badgeEl.textContent = 'PENDIENTE DE DATOS';
     } else {
       badgeEl.className = 'pace-status ' + (pace.optimal ? 'ok' : 'warn');
-      badgeEl.textContent = pace.optimal ? '✓ RITMO META (5\'40"–6\'00")' : '⚡ RITMO REGISTRADO';
+      badgeEl.textContent = pace.optimal ? 'RITMO META (5\'30"–6\'00")' : 'RITMO REGISTRADO';
     }
   }
+  var kcalInp = document.getElementById('runKcalInput');
+  if (kcalInp && !state.runKcal) {
+    var est = estimateNetRunKcal(state.runDistStr);
+    kcalInp.placeholder = est > 0 ? ('Est. ~' + est + ' kcal') : 'Est. ~1 kcal/kg/km';
+  }
+}
+
+function setRunDatePreset(dateKey) {
+  state.runDateKey = dateKey;
+  saveState();
+  render();
+}
+
+function onRunDateChange(newDateKey) {
+  if (!newDateKey) return;
+  state.runDateKey = newDateKey;
+  saveState();
+  render();
 }
 
 function onRunDistFormattedInput(inputEl) {
@@ -2602,15 +2815,19 @@ function saveRunSession() {
   var dVal = parseFloat(String(state.runDistStr || '').replace(',', '.'));
   var totalSec = parseRunTimeSeconds(state.runTimeStr);
   if (!dVal || dVal <= 0 || totalSec <= 0) {
-    showToast('⚠ Ingresa distancia y tiempo antes de guardar');
+    showToast('Ingresa distancia y tiempo antes de guardar');
     return;
   }
+  var chosenDateKey = state.runDateKey || getTodayDateKey();
+  var humanDate = formatDateKeyForDisplay(chosenDateKey);
   var pace = formatPaceFromRun(dVal, state.runTimeStr);
   var formattedTime = formatNormalizedRunTime(state.runTimeStr);
+  var finalKcal = state.runKcal ? Number(state.runKcal) : estimateNetRunKcal(dVal);
+
   var record = {
     id: Date.now(),
-    dateKey: getTodayDateKey(),
-    date: new Date().toLocaleDateString('es-CL', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }),
+    dateKey: chosenDateKey,
+    date: humanDate,
     day: state.day,
     type: 'run',
     title: 'Trote Urbano',
@@ -2618,47 +2835,71 @@ function saveRunSession() {
     timeFormatted: formattedTime,
     pace: pace.text,
     secPerKm: pace.secPerKm,
-    kcal: state.runKcal ? Number(state.runKcal) : 0
+    kcal: finalKcal
   };
   upsertHistoryRecord(record);
   state.completedDays[state.day] = true;
   if (state.runDrafts) delete state.runDrafts[state.day];
   saveState();
-  showToast('✓ Trote guardado en Historial');
+  showToast('Trote guardado con fecha ' + humanDate);
   render();
 }
 
 /* ============================================================================
-   7. REPORTE SEMANAL OBJETIVO, COMPARTIR NATIVO iOS Y BORRADO INDIVIDUAL
+   7. REPORTE SEMANAL OBJETIVO (SIN EMOTICONES, ESQUEMA DINÁMICO REAL)
    ============================================================================ */
 function buildSummaryText(record) {
   if (!record) return '';
   if (record.type === 'run') {
-    var kcalLine = record.kcal ? '\n• Energía activa: ' + record.kcal + ' kcal' : '';
+    var kcalLine = record.kcal ? '\n- Energia neta estimada: ' + record.kcal + ' kcal' : '';
     return [
-      '📋 Fitllermo — ' + record.title + ' (' + record.date + ')',
-      '• Distancia: ' + record.distKm + ' km',
-      '• Tiempo total: ' + record.timeFormatted,
-      '• Ritmo promedio: ' + record.pace + kcalLine
+      'Fitllermo - ' + record.title + ' (' + record.date + ')',
+      '- Distancia: ' + record.distKm + ' km',
+      '- Tiempo total: ' + record.timeFormatted,
+      '- Ritmo promedio: ' + record.pace + kcalLine
     ].join('\n');
   }
   var lines = [
-    '📋 Fitllermo — ' + record.title + ' (' + record.date + ')',
-    '• Duración: ' + record.durationMin + ' min'
+    'Fitllermo - ' + (record.shortName || record.title) + ' (' + record.date + ')',
+    '- Duracion: ' + record.durationMin + ' min'
   ];
   Object.keys(record.exercises || {}).forEach(function(k) {
     var ex = record.exercises[k];
-    var setsStr = (ex.sets || []).map(function(s) {
+    var setsArr = ex.sets || [];
+    var setsStr = setsArr.map(function(s) {
       return s.reps + '@RIR' + s.rir;
     }).join(', ') || 'Sin series';
-    lines.push('• ' + ex.code + '. ' + ex.name + ' (' + ex.weight + '): ' + setsStr);
+    var progFlag = shouldFlagExerciseProgression(ex.maxReps, setsArr)
+      ? ' [Subir carga / dificultad en proxima sesion]'
+      : '';
+    lines.push('- ' + ex.code + '. ' + ex.name + ' [' + ex.weight + ']: ' + setsStr + progFlag);
   });
   return lines.join('\n');
 }
 
+function getDynamicExecutedWeekScheme(strengthSessions) {
+  if (!Array.isArray(strengthSessions) || strengthSessions.length === 0) {
+    var fallback = state.weekPattern === 'BAB' ? 'B-A-B' : 'A-B-A';
+    return fallback + ' (sin sesiones registradas)';
+  }
+  var sorted = strengthSessions.slice().sort(function(a, b) {
+    var dkA = String(a.dateKey || '');
+    var dkB = String(b.dateKey || '');
+    if (dkA && dkB && dkA !== dkB) return dkA.localeCompare(dkB);
+    return (Number(a.id) || 0) - (Number(b.id) || 0);
+  });
+  var codes = sorted.map(function(s) {
+    if (s.routineType === 'routineB') return 'B';
+    if (s.routineType === 'routineA') return 'A';
+    var titleStr = String(s.shortName || s.title || '');
+    return titleStr.indexOf('Rutina B') !== -1 ? 'B' : 'A';
+  });
+  return codes.join('-');
+}
+
 function buildWeeklyReportForChat() {
   if (!state.history || state.history.length === 0) {
-    return '📊 REPORTE SEMANAL FITLLERMO\nAún no hay sesiones registradas en la semana actual.';
+    return 'REPORTE SEMANAL FITLLERMO\nAun no hay sesiones registradas en la semana actual.';
   }
 
   var strengthSessions = state.history.filter(function(r) { return r.type === 'strength'; });
@@ -2668,34 +2909,51 @@ function buildWeeklyReportForChat() {
     return acc + (parseFloat(r.distKm) || 0);
   }, 0);
 
+  var dynamicScheme = getDynamicExecutedWeekScheme(strengthSessions);
+
   var lines = [
-    '📊 REPORTE SEMANAL FITLLERMO',
-    '• Esquema de la semana: ' + (state.weekPattern === 'ABA' ? 'A-B-A' : 'B-A-B') + ' | Agarre A: ' + state.gripA.toUpperCase() + ' | B2 Rutina B: ' + state.variantB2_B.toUpperCase(),
-    '• Sesiones registradas: ' + strengthSessions.length + ' Fuerza + ' + runSessions.length + ' Trotes (' + totalKm.toFixed(2) + ' km acumulados)',
+    'REPORTE SEMANAL FITLLERMO',
+    '- Esquema de la semana: ' + dynamicScheme,
+    '- Sesiones registradas: ' + strengthSessions.length + ' Fuerza + ' + runSessions.length + ' Trotes (' + totalKm.toFixed(2) + ' km acumulados)',
     ''
   ];
 
   if (strengthSessions.length > 0) {
-    lines.push('🏋️‍♂️ SESIONES DE FUERZA:');
-    strengthSessions.forEach(function(s) {
-      lines.push('▸ ' + (s.shortName || s.title) + ' (' + s.date + ' · ' + s.durationMin + ' min):');
+    lines.push('SESIONES DE FUERZA:');
+    var sortedStrength = strengthSessions.slice().sort(function(a, b) {
+      var dkA = String(a.dateKey || '');
+      var dkB = String(b.dateKey || '');
+      if (dkA && dkB && dkA !== dkB) return dkA.localeCompare(dkB);
+      return (Number(a.id) || 0) - (Number(b.id) || 0);
+    });
+    sortedStrength.forEach(function(s) {
+      lines.push('* ' + (s.shortName || s.title) + ' (' + s.date + ' - ' + s.durationMin + ' min):');
       Object.keys(s.exercises || {}).forEach(function(k) {
         var ex = s.exercises[k];
         var setsArr = ex.sets || [];
         var setsFormatted = setsArr.map(function(st) {
           return st.reps + '@RIR' + st.rir;
         }).join(', ');
-        lines.push('  - ' + ex.code + ' ' + ex.name + ' [' + ex.weight + ']: ' + (setsFormatted || 'Sin series'));
+        var progFlag = shouldFlagExerciseProgression(ex.maxReps, setsArr)
+          ? ' [Subir carga / dificultad en proxima sesion]'
+          : '';
+        lines.push('  - ' + ex.code + ' ' + ex.name + ' [' + ex.weight + ']: ' + (setsFormatted || 'Sin series') + progFlag);
       });
     });
     lines.push('');
   }
 
   if (runSessions.length > 0) {
-    lines.push('🏃‍♂️ SESIONES DE TROTE URBANO:');
-    runSessions.forEach(function(r) {
+    lines.push('SESIONES DE TROTE URBANO:');
+    var sortedRuns = runSessions.slice().sort(function(a, b) {
+      var dkA = String(a.dateKey || '');
+      var dkB = String(b.dateKey || '');
+      if (dkA && dkB && dkA !== dkB) return dkA.localeCompare(dkB);
+      return (Number(a.id) || 0) - (Number(b.id) || 0);
+    });
+    sortedRuns.forEach(function(r) {
       var timeDisplay = r.timeFormatted || (r.timeMin + ' min');
-      var kcalInfo = r.kcal ? ' · ' + r.kcal + ' kcal' : '';
+      var kcalInfo = r.kcal ? ' - ' + r.kcal + ' kcal' : '';
       lines.push('  - ' + r.date + ': ' + r.distKm + ' km en ' + timeDisplay + ' (Ritmo ' + r.pace + kcalInfo + ')');
     });
   }
@@ -2703,19 +2961,27 @@ function buildWeeklyReportForChat() {
   return lines.join('\n');
 }
 
+var buildWeeklyReportText = buildWeeklyReportForChat;
+
 function copyText(txt) {
-  if (navigator.clipboard && navigator.clipboard.writeText) {
-    navigator.clipboard.writeText(txt).then(function() {
-      showToast('📋 Copiado al portapapeles');
-    });
-  } else {
+  if (!txt) return;
+  try {
     var ta = document.createElement('textarea');
     ta.value = txt;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
     document.body.appendChild(ta);
+    ta.focus();
     ta.select();
     document.execCommand('copy');
     document.body.removeChild(ta);
-    showToast('📋 Copiado al portapapeles');
+    showToast('Copiado al portapapeles');
+  } catch (e) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(txt).then(function() {
+        showToast('Copiado al portapapeles');
+      });
+    }
   }
 }
 
@@ -2732,27 +2998,33 @@ function shareReportNative() {
 }
 
 function deleteHistoryRecord(recordId) {
-  var target = state.history.find(function(h) { return h.id === recordId; });
-  state.history = state.history.filter(function(h) { return h.id !== recordId; });
+  var target = (state.history || []).find(function(r) { return r && r.id === recordId; });
+  state.history = (state.history || []).filter(function(r) { return r && r.id !== recordId; });
+
   if (target && target.day) {
-    var stillHasDay = state.history.some(function(h) { return h.day === target.day; });
-    if (!stillHasDay) {
+    var stillHasDay = state.history.some(function(r) { return r && r.day === target.day; });
+    if (!stillHasDay && state.completedDays) {
       delete state.completedDays[target.day];
     }
+    if (target.type === 'strength' && target.day === state.day) {
+      state.sessionCompletedToday = false;
+    }
   }
+
   state._allowEmptyHistorySave = true;
   saveState();
-  showToast('🗑 Registro eliminado del historial y reporte');
+  showToast('Registro eliminado');
   render();
 }
 
 function clearAllHistory() {
   state.history = [];
   state.completedDays = {};
+  state.sessionCompletedToday = false;
   state.confirmingClearAll = false;
   state._allowEmptyHistorySave = true;
   saveState();
-  showToast('Semana actual limpiada');
+  showToast('Historial de la semana limpiado');
   render();
 }
 
@@ -2766,7 +3038,6 @@ function handleFileImport(event) {
       if (parsed && Array.isArray(parsed.history)) {
         state.history = parsed.history;
         if (parsed.customWeights) state.customWeights = parsed.customWeights;
-        if (parsed.restConfig) state.restConfig = Object.assign({}, DEFAULT_REST_CONFIG, parsed.restConfig);
         if (parsed.completedDays) state.completedDays = parsed.completedDays;
         saveState();
         render();
@@ -3020,6 +3291,7 @@ function syncRunInputsForDay(d) {
       state.runDistStr = String(savedRun.distKm || '');
       state.runTimeStr = String(savedRun.timeFormatted || '');
       state.runKcal = savedRun.kcal ? String(savedRun.kcal) : '';
+      state.runDateKey = savedRun.dateKey || getTodayDateKey();
       return;
     }
   }
@@ -3027,6 +3299,7 @@ function syncRunInputsForDay(d) {
   state.runDistStr = draft.distStr;
   state.runTimeStr = draft.timeStr;
   state.runKcal = draft.kcal;
+  state.runDateKey = draft.dateKey || getTodayDateKey();
 }
 
 function selectDay(d) {
@@ -3145,6 +3418,9 @@ function render() {
   if (state.isResting) {
     mainBtn.className = 'btn-primary-action resting-mode';
     mainBtn.innerHTML = '⏭ Saltar Descanso y Seguir';
+  } else if (state.sessionCompletedToday) {
+    mainBtn.className = 'btn-primary-action';
+    mainBtn.innerHTML = '✓ Rutina del Día Completada';
   } else {
     mainBtn.className = 'btn-primary-action';
     var restTag = curStep.restAfter > 0 ? curStep.restAfter + 's' : 'Fin';
@@ -3274,6 +3550,7 @@ function render() {
     var showBody = !completed || !!state.manualExpandedBlocks[block.id];
 
     var cardsHTML = block.exercises.map(function(ex, idx) {
+      var targetExSets = getExerciseTargetSets(block, ex);
       var isCurEx = curEx.id === ex.id && !completed;
       var isExpanded = state.expandedExId === ex.id;
       var exW = ex.weightKey ? getEffectiveWeight(ex.weightKey, ex.defaultWeight) + ' kg' : 'Peso Corp.';
@@ -3281,8 +3558,8 @@ function render() {
       var prevRec = getLastExerciseRecord(ex.id);
 
       var setsChips = [];
-      for (var s = 1; s <= block.rounds; s++) {
-        var found = loggedSets.find(function(x) { return x.set === s; });
+      for (var s = 1; s <= targetExSets; s++) {
+        var found = loggedSets.find(function(x) { return Number(x.set) === s; });
         if (found) {
           setsChips.push('<span class="set-chip done">S' + s + ': ' + found.reps + ' <b>@RIR' + found.rir + '</b></span>');
         } else if (isCurEx && curStep.round === s) {
@@ -3306,7 +3583,7 @@ function render() {
         '</div>',
         '<div class="ex-right-meta">',
         '<span class="ex-weight-pill" data-weight-badge="' + (ex.weightKey || '') + '">' + exW + '</span>',
-        '<span class="ex-reps-pill">' + ex.minReps + '–' + ex.maxReps + ' reps' + (ex.unilateral ? '/lado' : '') + '</span>',
+        '<span class="ex-reps-pill">' + targetExSets + '×' + ex.minReps + '–' + ex.maxReps + (ex.unilateral ? '/lado' : '') + '</span>',
         '</div>',
         '</div>',
         '<div class="sets-strip">' + setsChips.join('') + '</div>',
@@ -3487,10 +3764,16 @@ function renderControlPanelView(container) {
 }
 
 /* ============================================================================
-   11. VISTA DE TROTE URBANO (AUTO-FORMATO "0.00" Y "00:00", LIMPIA)
+   11. VISTA DE TROTE URBANO (AUTO-FORMATO "0.00" Y "00:00" + FECHA MANUAL)
    ============================================================================ */
 function renderRunView(container, isOptionalDay6) {
   var pace = formatPaceFromRun(state.runDistStr, state.runTimeStr);
+  var todayKey = getTodayDateKey();
+  var yesterdayKey = getYesterdayDateKey();
+  var activeDateKey = state.runDateKey || todayKey;
+  var estKcal = estimateNetRunKcal(state.runDistStr);
+  var kcalPlaceholder = estKcal > 0 ? ('Est. ~' + estKcal + ' kcal') : 'Est. ~1 kcal/kg/km';
+
   var optSwitch = '';
   if (isOptionalDay6) {
     optSwitch = [
@@ -3505,7 +3788,7 @@ function renderRunView(container, isOptionalDay6) {
   }
 
   var statusClass = pace.empty ? '' : (pace.optimal ? 'ok' : 'warn');
-  var statusText = pace.empty ? 'PENDIENTE DE DATOS' : (pace.optimal ? '✓ RITMO META (5\'40"–6\'00")' : '⚡ RITMO REGISTRADO');
+  var statusText = pace.empty ? 'PENDIENTE DE DATOS' : (pace.optimal ? 'RITMO META (5\'30"–6\'00")' : 'RITMO REGISTRADO');
 
   var todaySavedRun = (state.history || []).slice().reverse().find(function(h) {
     return h && h.type === 'run' && h.day === state.day;
@@ -3515,10 +3798,10 @@ function renderRunView(container, isOptionalDay6) {
     savedRunSummaryHTML = [
       '<div class="summary-card">',
       '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px">',
-      '<strong style="font-size:12.5px;color:var(--accent)">✓ TROTE GUARDADO EN DÍA ' + state.day + '</strong>',
+      '<strong style="font-size:12.5px;color:var(--accent)">✓ TROTE GUARDADO EN DÍA ' + state.day + ' (' + todaySavedRun.date + ')</strong>',
       '<div style="display:flex;gap:6px">',
-      '<button type="button" class="chip-btn active" onclick="copyText(buildSummaryText(state.history.find(function(x){return x.id===' + todaySavedRun.id + ';})))">📋 Copiar</button>',
-      '<button type="button" class="chip-btn danger" onclick="deleteHistoryRecord(' + todaySavedRun.id + ')">🗑 Limpiar</button>',
+      '<button type="button" class="chip-btn active" onclick="copyText(buildSummaryText(state.history.find(function(x){return x.id===' + todaySavedRun.id + ';})))">Copiar</button>',
+      '<button type="button" class="chip-btn danger" onclick="deleteHistoryRecord(' + todaySavedRun.id + ')">Limpiar</button>',
       '</div>',
       '</div>',
       '<div class="summary-pre">' + buildSummaryText(todaySavedRun) + '</div>',
@@ -3532,7 +3815,18 @@ function renderRunView(container, isOptionalDay6) {
     '<section class="run-card">',
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">',
     '<div style="font-size:16px;font-weight:800">Trote Urbano</div>',
-    '<span class="capsule-pill">Día ' + state.day + '</span>',
+    '<span class="capsule-pill">Día ' + state.day + ' · Meta 6,5–7,0 km</span>',
+    '</div>',
+    '<div class="run-date-bar">',
+    '<div>',
+    '<span style="font-family:var(--font-mono);font-size:10px;font-weight:800;color:var(--muted);display:block;text-transform:uppercase">Fecha de ejecución</span>',
+    '<span style="font-size:11px;color:var(--text);font-weight:700">' + formatDateKeyForDisplay(activeDateKey) + '</span>',
+    '</div>',
+    '<div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">',
+    '<button type="button" class="seg-btn ' + (activeDateKey === todayKey ? 'active' : '') + '" onclick="setRunDatePreset(\'' + todayKey + '\')">Hoy</button>',
+    '<button type="button" class="seg-btn ' + (activeDateKey === yesterdayKey ? 'active' : '') + '" onclick="setRunDatePreset(\'' + yesterdayKey + '\')">Ayer</button>',
+    '<input type="date" class="run-date-input" value="' + activeDateKey + '" onchange="onRunDateChange(this.value)" />',
+    '</div>',
     '</div>',
     '<div class="run-inputs-grid">',
     '<div class="run-field-box">',
@@ -3549,9 +3843,9 @@ function renderRunView(container, isOptionalDay6) {
     '</div>',
     '</div>',
     '<div class="run-field-box" style="margin-bottom:12px">',
-    '<label for="runKcalInput">Energía Activa Opcional (kcal)</label>',
+    '<label for="runKcalInput">Gasto Energético Neto (kcal · vacío calcula ~1 kcal/kg/km)</label>',
     '<input id="runKcalInput" type="text" inputmode="numeric" autocomplete="off" autocorrect="off" spellcheck="false" ',
-    'class="run-clean-input" placeholder="0" value="' + String(state.runKcal || '') + '" ',
+    'class="run-clean-input" placeholder="' + kcalPlaceholder + '" value="' + String(state.runKcal || '') + '" ',
     'oninput="onCleanRunInput(\'kcal\', this)" onblur="clearIOSUndoStack(this)" />',
     '</div>',
     '<div class="run-pace-result">',
