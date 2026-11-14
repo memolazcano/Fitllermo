@@ -109,7 +109,33 @@
   }
   .top-actions {
     display: flex;
+    flex-direction: column;
+    gap: 5px;
+    align-items: stretch;
+  }
+  .top-actions-row {
+    display: flex;
     gap: 6px;
+  }
+  .top-reset-week-btn {
+    width: 100%;
+    text-align: center;
+    justify-content: center;
+    display: flex;
+    align-items: center;
+    padding: 5px 10px;
+    font-size: 10.5px;
+    background: var(--card-alt);
+    color: var(--muted);
+    border: 1px solid var(--border-strong);
+    border-radius: 9px;
+    font-family: var(--font-mono);
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .top-reset-week-btn:active {
+    background: var(--primary);
+    color: var(--primary-text);
   }
   .chip-btn {
     background: var(--card);
@@ -760,27 +786,54 @@
     outline: none;
     border-color: var(--accent);
   }
+  /* FRANJA 3/4 FECHA + 1/4 REINICIAR SESIÓN (FUERZA Y TROTE) */
+  .session-top-row {
+    display: grid;
+    grid-template-columns: 3fr 1fr;
+    gap: 8px;
+    margin-bottom: 12px;
+    align-items: stretch;
+  }
   .run-date-bar {
     background: var(--card-alt);
     border: 1px solid var(--border);
     border-radius: 14px;
-    padding: 10px 12px;
-    margin-bottom: 10px;
+    padding: 8px 10px;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
+    gap: 6px;
+    min-width: 0;
   }
   .run-date-input {
     background: var(--bg);
     color: var(--text);
     border: 1px solid var(--border-strong);
     border-radius: 8px;
-    padding: 6px 8px;
+    padding: 5px 6px;
     font-family: var(--font-mono);
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 700;
+    max-width: 122px;
+  }
+  .session-reset-btn {
+    background: var(--card-alt);
+    color: var(--text);
+    border: 1px solid var(--border-strong);
+    border-radius: 14px;
+    padding: 8px 6px;
+    font-family: var(--font-ui);
+    font-size: 11.5px;
+    font-weight: 700;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+  }
+  .session-reset-btn:active {
+    background: var(--primary);
+    color: var(--primary-text);
   }
   .run-pace-result {
     background: var(--bg);
@@ -911,11 +964,11 @@
   .dock-inner {
     max-width: 500px;
     margin: 0 auto;
-    display: grid;
-    grid-template-columns: 1.75fr 1fr;
-    gap: 9px;
+    display: flex;
+    justify-content: center;
   }
   .btn-primary-action {
+    width: 100%;
     background: var(--primary);
     color: var(--primary-text);
     border: none;
@@ -1001,8 +1054,13 @@
       </div>
     </div>
     <div class="top-actions">
-      <button class="chip-btn" id="panelToggleBtn" onclick="toggleViewModal('panel')">⚙️ Panel</button>
-      <button class="chip-btn" id="historyToggleBtn" onclick="toggleViewModal('history')">📊 Historial</button>
+      <div class="top-actions-row">
+        <button class="chip-btn" id="panelToggleBtn" onclick="toggleViewModal('panel')">⚙️ Panel</button>
+        <button class="chip-btn" id="historyToggleBtn" onclick="toggleViewModal('history')">📊 Historial</button>
+      </div>
+      <button class="top-reset-week-btn" id="secondaryActionBtn" onclick="resetWeekAndFlipPattern()">
+        Reiniciar Semana ⇄
+      </button>
     </div>
   </header>
 
@@ -1018,9 +1076,6 @@
   <div class="dock-inner">
     <button class="btn-primary-action" id="mainActionBtn" onclick="handlePrimaryAction()">
       ✓ Serie Completada
-    </button>
-    <button class="btn-secondary-action" id="secondaryActionBtn" onclick="resetWeekAndFlipPattern()">
-      Reiniciar ⇄
     </button>
   </div>
 </div>
@@ -1139,6 +1194,7 @@ var state = {
   sessionLogs: {},
   sessionStartTime: null,
   sessionCompletedToday: false,
+  sessionDateKey: '',
   daySessions: {},         // Guarda el progreso en vivo de cada día de fuerza { [day]: {...} }
   runDrafts: {},           // Guarda borradores no guardados de trote por día { [day]: { dist, time, kcal, dateKey } }
   completedDays: {},
@@ -1229,7 +1285,8 @@ function saveCurrentDaySnapshot() {
       manualExpandedBlocks: Object.assign({}, state.manualExpandedBlocks || {}),
       sessionLogs: JSON.parse(JSON.stringify(state.sessionLogs || {})),
       sessionStartTime: state.sessionStartTime || null,
-      sessionCompletedToday: !!state.sessionCompletedToday
+      sessionCompletedToday: !!state.sessionCompletedToday,
+      dateKey: state.sessionDateKey || getTodayDateKey()
     };
   } else if (curType === 'run') {
     var cleanDist = (state.runDistStr === '0.00' || state.runDistStr === '0') ? '' : String(state.runDistStr || '');
@@ -1269,6 +1326,7 @@ function restoreDaySnapshot(targetDay) {
       state.manualExpandedBlocks = Object.assign({}, snap.manualExpandedBlocks || {});
       state.sessionStartTime = snap.sessionStartTime || null;
       state.sessionCompletedToday = !!snap.sessionCompletedToday;
+      state.sessionDateKey = snap.dateKey || getTodayDateKey();
       state.currentRIR = String(snap.currentRIR || '2');
       var activeStep = steps[state.stepIndex] || steps[0];
       state.currentReps = Number(snap.currentReps) || (activeStep ? activeStep.ex.defaultReps : 8);
@@ -1279,6 +1337,7 @@ function restoreDaySnapshot(targetDay) {
       state.manualExpandedBlocks = {};
       state.sessionStartTime = null;
       state.sessionCompletedToday = false;
+      state.sessionDateKey = getTodayDateKey();
       state.currentRIR = '2';
       if (steps[0]) {
         state.currentReps = steps[0].ex.defaultReps;
@@ -1420,6 +1479,7 @@ function loadState() {
         runTimeStr: initTimeStr,
         runKcal: initKcalStr,
         runDateKey: preferredConfig.runDateKey || getTodayDateKey(),
+        sessionDateKey: preferredConfig.sessionDateKey || getTodayDateKey(),
         sessionCompletedToday: !!preferredConfig.sessionCompletedToday,
         activeModal: null,
         confirmingClearAll: false
@@ -1505,6 +1565,7 @@ function saveState() {
       sessionLogs: state.sessionLogs,
       sessionStartTime: state.sessionStartTime,
       sessionCompletedToday: state.sessionCompletedToday,
+      sessionDateKey: state.sessionDateKey,
       daySessions: state.daySessions,
       runDrafts: state.runDrafts,
       completedDays: state.completedDays,
@@ -2553,10 +2614,13 @@ function completeStrengthWorkout(rData) {
     });
   });
 
+  var chosenDateKey = state.sessionDateKey || getTodayDateKey();
+  var humanDate = formatDateKeyForDisplay(chosenDateKey);
+
   var record = {
     id: Date.now(),
-    dateKey: getTodayDateKey(),
-    date: new Date().toLocaleDateString('es-CL', { day: '2-digit', month: 'short' }),
+    dateKey: chosenDateKey,
+    date: humanDate,
     day: state.day,
     routineType: rData.routineType || (rData.shortName === 'Rutina B' ? 'routineB' : 'routineA'),
     weekPattern: state.weekPattern,
@@ -2647,6 +2711,7 @@ function resetOnlyCurrentDaySession(showFeedback) {
   state.manualExpandedBlocks = {};
   state.sessionStartTime = null;
   state.sessionCompletedToday = false;
+  state.sessionDateKey = getTodayDateKey();
   if (state.daySessions) delete state.daySessions[state.day];
   if (state.runDrafts) delete state.runDrafts[state.day];
 
@@ -2768,16 +2833,46 @@ function updateLiveRunPaceDisplay() {
 }
 
 function setRunDatePreset(dateKey) {
-  state.runDateKey = dateKey;
+  var effType = getEffectiveDayType(state.day);
+  if (effType === 'run') {
+    state.runDateKey = dateKey;
+  } else {
+    state.sessionDateKey = dateKey;
+    var existingStrength = (state.history || []).find(function(h) {
+      return h && h.type === 'strength' && Number(h.day) === Number(state.day);
+    });
+    if (existingStrength) {
+      existingStrength.dateKey = dateKey;
+      existingStrength.date = formatDateKeyForDisplay(dateKey);
+    }
+  }
   saveState();
   render();
 }
 
 function onRunDateChange(newDateKey) {
   if (!newDateKey) return;
-  state.runDateKey = newDateKey;
-  saveState();
-  render();
+  setRunDatePreset(newDateKey);
+}
+
+function buildSessionDateAndResetBarHTML(activeDateKey) {
+  var todayKey = getTodayDateKey();
+  var resolvedKey = activeDateKey || todayKey;
+  return [
+    '<div class="session-top-row">',
+    '<div class="run-date-bar">',
+    '<div style="min-width:0">',
+    '<span style="font-family:var(--font-mono);font-size:9.5px;font-weight:800;color:var(--muted);display:block;text-transform:uppercase">Fecha</span>',
+    '<span style="font-size:11px;color:var(--text);font-weight:700;white-space:nowrap">' + formatDateKeyForDisplay(resolvedKey) + '</span>',
+    '</div>',
+    '<div style="display:flex;align-items:center;gap:5px;flex-shrink:0">',
+    '<button type="button" class="seg-btn ' + (resolvedKey === todayKey ? 'active' : '') + '" onclick="setRunDatePreset(\'' + todayKey + '\')">Hoy</button>',
+    '<input type="date" class="run-date-input" value="' + resolvedKey + '" onchange="onRunDateChange(this.value)" />',
+    '</div>',
+    '</div>',
+    '<button type="button" class="session-reset-btn" onclick="resetOnlyCurrentDaySession(true)">↺ Reiniciar</button>',
+    '</div>'
+  ].join('');
 }
 
 function onRunDistFormattedInput(inputEl) {
@@ -3625,7 +3720,8 @@ function render() {
     ].join('');
   }).join('');
 
-  main.innerHTML = unifiedConsoleHTML + capsulesHTML;
+  var strengthDateBarHTML = buildSessionDateAndResetBarHTML(state.sessionDateKey || getTodayDateKey());
+  main.innerHTML = strengthDateBarHTML + unifiedConsoleHTML + capsulesHTML;
 }
 
 /* ============================================================================
@@ -3750,7 +3846,6 @@ function renderControlPanelView(container) {
 function renderRunView(container, isOptionalDay6) {
   var pace = formatPaceFromRun(state.runDistStr, state.runTimeStr);
   var todayKey = getTodayDateKey();
-  var yesterdayKey = getYesterdayDateKey();
   var activeDateKey = state.runDateKey || todayKey;
   var estKcal = estimateNetRunKcal(state.runDistStr);
   var kcalPlaceholder = estKcal > 0 ? ('Est. ~' + estKcal + ' kcal') : 'Est. ~1 kcal/kg/km';
@@ -3770,24 +3865,15 @@ function renderRunView(container, isOptionalDay6) {
 
   var statusClass = pace.empty ? '' : (pace.optimal ? 'ok' : 'warn');
   var statusText = pace.empty ? 'PENDIENTE DE DATOS' : (pace.optimal ? 'RITMO META (5\'30"–6\'00")' : 'RITMO REGISTRADO');
+  var runDateBarHTML = buildSessionDateAndResetBarHTML(activeDateKey);
 
   container.innerHTML = [
     optSwitch,
+    runDateBarHTML,
     '<section class="run-card">',
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">',
     '<div style="font-size:16px;font-weight:800">Trote Urbano</div>',
     '<span class="capsule-pill">Día ' + state.day + ' · Meta 6,5–7,0 km</span>',
-    '</div>',
-    '<div class="run-date-bar">',
-    '<div>',
-    '<span style="font-family:var(--font-mono);font-size:10px;font-weight:800;color:var(--muted);display:block;text-transform:uppercase">Fecha de ejecución</span>',
-    '<span style="font-size:11px;color:var(--text);font-weight:700">' + formatDateKeyForDisplay(activeDateKey) + '</span>',
-    '</div>',
-    '<div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap">',
-    '<button type="button" class="seg-btn ' + (activeDateKey === todayKey ? 'active' : '') + '" onclick="setRunDatePreset(\'' + todayKey + '\')">Hoy</button>',
-    '<button type="button" class="seg-btn ' + (activeDateKey === yesterdayKey ? 'active' : '') + '" onclick="setRunDatePreset(\'' + yesterdayKey + '\')">Ayer</button>',
-    '<input type="date" class="run-date-input" value="' + activeDateKey + '" onchange="onRunDateChange(this.value)" />',
-    '</div>',
     '</div>',
     '<div class="run-inputs-grid">',
     '<div class="run-field-box">',
