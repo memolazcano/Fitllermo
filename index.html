@@ -242,6 +242,21 @@
     color: var(--accent);
     border-color: rgba(234, 88, 12, 0.45);
   }
+  .undo-step-btn {
+    background: var(--card-alt);
+    color: var(--text);
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    padding: 4px 8px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .undo-step-btn:active {
+    background: var(--primary);
+    color: var(--primary-text);
+  }
 
   .uc-ex-header {
     margin-top: 10px;
@@ -1049,7 +1064,7 @@ function setupIOSPWA() {
 }
 
 /* ============================================================================
-   1. ESTADO GLOBAL Y ALTERNANCIA SEMANAL (A-B-A <-> B-A-B)
+   1. ESTADO GLOBAL, MEMORIA POR DÍA Y ALTERNANCIA SEMANAL (A-B-A <-> B-A-B)
    ============================================================================ */
 var STORAGE_KEY = 'fitllermo_swiss_bento_v3';
 var KNOWN_STORAGE_KEYS = [
@@ -1062,10 +1077,19 @@ var KNOWN_STORAGE_KEYS = [
 ];
 var RIR_OPTIONS = ['0', '1', '2', '3+'];
 
+var DEFAULT_REST_CONFIG = {
+  unilateral: 45,
+  blockA: 80,
+  blockB: 60,
+  transition: 90,
+  coreA: 45,
+  coreB: 60
+};
+
 var state = {
   day: 1,
   weekPattern: 'ABA',      // 'ABA' | 'BAB'
-  weekOrder: 'ABA',        // Sincronizado con weekPattern
+  weekOrder: 'ABA',
   activeModal: null,       // null | 'panel' | 'history'
   sound: true,
   // Metrónomo Opción A (pulso editable en segundos)
@@ -1073,22 +1097,15 @@ var state = {
   metroIntervalSec: 1.0,
   // Configuraciones de rutina y series por bloque
   gripA: 'prono',          // 'prono' | 'supino'
-  roundsBlockA: 3,         // Series Bloque A (Rutina A y B)
-  roundsBlockB: 3,         // Series Bloque B (Rutina A y B)
-  roundsBlockC: 3,         // Series Bloque C (Rutina A y B)
+  roundsBlockA: 3,
+  roundsBlockB: 3,
+  roundsBlockC: 3,
   variantB2_B: 'diamante', // 'diamante' | 'fondos'
   day6Mode: 'run',         // 'run' | 'rest'
   // Cargas personalizadas y tiempos de descanso editables
   customWeights: {},
-  restConfig: {
-    unilateral: 45,
-    blockA: 80,
-    blockB: 60,
-    transition: 90,
-    coreA: 45,
-    coreB: 60
-  },
-  // Progreso de la sesión en curso (persistente al minimizar en iPhone)
+  restConfig: Object.assign({}, DEFAULT_REST_CONFIG),
+  // Progreso de la sesión activa (y diccionario por día para no perder progreso al cambiar de pestaña)
   stepIndex: 0,
   isResting: false,
   restRemaining: 0,
@@ -1099,9 +1116,11 @@ var state = {
   manualExpandedBlocks: {},
   sessionLogs: {},
   sessionStartTime: null,
+  daySessions: {},         // Guarda el progreso en vivo de cada día de fuerza { [day]: {...} }
+  runDrafts: {},           // Guarda borradores no guardados de trote por día { [day]: { dist, time, kcal } }
   completedDays: {},
   confirmingClearAll: false,
-  // Trote Urbano (vacío en días no hechos, con formato automático 0.00 y 00:00)
+  // Trote Urbano (vacío en días no realizados, auto-formato 0.00 y 00:00)
   runDistStr: '',
   runTimeStr: '',
   runKcal: '',
@@ -1138,7 +1157,74 @@ function getCycleDays() {
   ];
 }
 
-/* Escáner universal: revisa todas las llaves de localStorage y fusiona historial, pesos y días */
+function getEffectiveDayType(dayNumber) {
+  var days = getCycleDays();
+  var dayObj = days.find(function(x) { return x.day === dayNumber; }) || days[0];
+  return dayObj.type === 'run_opt' ? state.day6Mode : dayObj.type;
+}
+
+/* Guarda instantánea del día actual para que explorar otros días nunca borre las series hechas */
+function saveCurrentDaySnapshot() {
+  if (!state.daySessions || typeof state.daySessions !== 'object') {
+    state.daySessions = {};
+  }
+  if (!state.runDrafts || typeof state.runDrafts !== 'object') {
+    state.runDrafts = {};
+  }
+  var curType = getEffectiveDayType(state.day);
+  if (curType === 'routineA' || curType === 'routineB') {
+    state.daySessions[state.day] = {
+      routineType: curType,
+      stepIndex: Number(state.stepIndex) || 0,
+      currentReps: Number(state.currentReps) || 8,
+      currentRIR: String(state.currentRIR || '2'),
+      expandedExId: state.expandedExId || null,
+      manualExpandedBlocks: Object.assign({}, state.manualExpandedBlocks || {}),
+      sessionLogs: JSON.parse(JSON.stringify(state.sessionLogs || {})),
+      sessionStartTime: state.sessionStartTime || null
+    };
+  } else if (curType === 'run') {
+    state.runDrafts[state.day] = {
+      distStr: String(state.runDistStr || ''),
+      timeStr: String(state.runTimeStr || ''),
+      kcal: String(state.runKcal || '')
+    };
+  }
+}
+
+function restoreDaySnapshot(targetDay) {
+  var targetType = getEffectiveDayType(targetDay);
+  if (targetType === 'routineA' || targetType === 'routineB') {
+    var rData = getRoutineData(targetType);
+    var steps = buildStepsForRoutine(rData);
+    var snap = state.daySessions && state.daySessions[targetDay];
+
+    if (snap && snap.routineType === targetType) {
+      state.stepIndex = Math.min(Number(snap.stepIndex) || 0, Math.max(0, steps.length - 1));
+      state.sessionLogs = JSON.parse(JSON.stringify(snap.sessionLogs || {}));
+      state.manualExpandedBlocks = Object.assign({}, snap.manualExpandedBlocks || {});
+      state.sessionStartTime = snap.sessionStartTime || null;
+      state.currentRIR = String(snap.currentRIR || '2');
+      var activeStep = steps[state.stepIndex] || steps[0];
+      state.currentReps = Number(snap.currentReps) || (activeStep ? activeStep.ex.defaultReps : 8);
+      state.expandedExId = snap.expandedExId || (activeStep ? activeStep.ex.id : null);
+    } else {
+      state.stepIndex = 0;
+      state.sessionLogs = {};
+      state.manualExpandedBlocks = {};
+      state.sessionStartTime = null;
+      state.currentRIR = '2';
+      if (steps[0]) {
+        state.currentReps = steps[0].ex.defaultReps;
+        state.expandedExId = steps[0].ex.id;
+      }
+    }
+  } else if (targetType === 'run') {
+    syncRunInputsForDay(targetDay);
+  }
+}
+
+/* Escáner universal con normalización profunda a prueba de fallos */
 function loadState() {
   try {
     var keysToScan = [];
@@ -1188,9 +1274,10 @@ function loadState() {
           }
         }
 
-        if (Array.isArray(parsed.archivedHistory) && parsed.archivedHistory.length > 0) {
-          for (var aIdx = 0; aIdx < parsed.archivedHistory.length; aIdx++) {
-            var archItem = parsed.archivedHistory[aIdx];
+        var archSource = parsed.archivedHistory || parsed.archivedWeeks;
+        if (Array.isArray(archSource) && archSource.length > 0) {
+          for (var aIdx = 0; aIdx < archSource.length; aIdx++) {
+            var archItem = archSource[aIdx];
             if (!archItem || typeof archItem !== 'object') continue;
             var archId = archItem.id || (archItem.closedAt + '_' + aIdx);
             var archExists = mergedArchived.some(function(exArch) {
@@ -1202,8 +1289,9 @@ function loadState() {
           }
         }
 
-        if (parsed.lastExerciseRecords && typeof parsed.lastExerciseRecords === 'object') {
-          mergedLastRecords = Object.assign({}, mergedLastRecords, parsed.lastExerciseRecords);
+        var lastMemSource = parsed.lastExerciseRecords || parsed.lastExerciseMemory;
+        if (lastMemSource && typeof lastMemSource === 'object') {
+          mergedLastRecords = Object.assign({}, mergedLastRecords, lastMemSource);
         }
 
         if (parsed.customWeights && typeof parsed.customWeights === 'object') {
@@ -1224,7 +1312,6 @@ function loadState() {
       return (Number(a.id) || 0) - (Number(b.id) || 0);
     });
 
-    // Asegura que lastExerciseRecords conserve el último registro conocido de cada ejercicio
     for (var m = 0; m < mergedHistory.length; m++) {
       var hRec = mergedHistory[m];
       if (hRec && hRec.type === 'strength' && hRec.exercises) {
@@ -1240,21 +1327,27 @@ function loadState() {
     if (preferredConfig) {
       var resolvedOrder = preferredConfig.weekPattern || preferredConfig.weekOrder || 'ABA';
       state = Object.assign({}, state, preferredConfig, {
+        day: Number(preferredConfig.day) || 1,
         weekPattern: resolvedOrder,
         weekOrder: resolvedOrder,
         roundsBlockA: Number(preferredConfig.roundsBlockA || preferredConfig.roundsBlockA_A || 3),
         roundsBlockB: Number(preferredConfig.roundsBlockB || 3),
         roundsBlockC: Number(preferredConfig.roundsBlockC || 3),
-        restConfig: Object.assign({}, state.restConfig, preferredConfig.restConfig || {}),
-        sessionLogs: preferredConfig.sessionLogs || {},
-        manualExpandedBlocks: preferredConfig.manualExpandedBlocks || {},
+        restConfig: Object.assign({}, DEFAULT_REST_CONFIG, preferredConfig.restConfig || {}),
+        sessionLogs: (preferredConfig.sessionLogs && typeof preferredConfig.sessionLogs === 'object') ? preferredConfig.sessionLogs : {},
+        manualExpandedBlocks: (preferredConfig.manualExpandedBlocks && typeof preferredConfig.manualExpandedBlocks === 'object') ? preferredConfig.manualExpandedBlocks : {},
+        daySessions: (preferredConfig.daySessions && typeof preferredConfig.daySessions === 'object') ? preferredConfig.daySessions : {},
+        runDrafts: (preferredConfig.runDrafts && typeof preferredConfig.runDrafts === 'object') ? preferredConfig.runDrafts : {},
+        runDistStr: String(preferredConfig.runDistStr || ''),
+        runTimeStr: String(preferredConfig.runTimeStr || ''),
+        runKcal: String(preferredConfig.runKcal || ''),
         activeModal: null,
         confirmingClearAll: false
       });
-      // Si la llave principal ya tenía el historial vacío a propósito tras cerrar semana, respétalo
-      if (Array.isArray(preferredConfig.history) && preferredConfig.history.length === 0 && Array.isArray(preferredConfig.archivedHistory) && preferredConfig.archivedHistory.length > 0) {
+
+      if (Array.isArray(preferredConfig.history) && preferredConfig.history.length === 0 && mergedArchived.length > 0) {
         mergedHistory = [];
-        mergedDays = preferredConfig.completedDays || {};
+        mergedDays = (preferredConfig.completedDays && typeof preferredConfig.completedDays === 'object') ? preferredConfig.completedDays : {};
       }
     }
 
@@ -1273,6 +1366,8 @@ function loadState() {
 function saveState() {
   try {
     state.weekOrder = state.weekPattern;
+    saveCurrentDaySnapshot();
+
     var existingRaw = localStorage.getItem(STORAGE_KEY);
     if (existingRaw && (!state.history || state.history.length === 0) && !state._allowEmptyHistorySave) {
       try {
@@ -1309,6 +1404,8 @@ function saveState() {
       manualExpandedBlocks: state.manualExpandedBlocks,
       sessionLogs: state.sessionLogs,
       sessionStartTime: state.sessionStartTime,
+      daySessions: state.daySessions,
+      runDrafts: state.runDrafts,
       completedDays: state.completedDays,
       runDistStr: state.runDistStr,
       runTimeStr: state.runTimeStr,
@@ -1343,7 +1440,7 @@ function getAllEquipmentCatalog() {
 }
 
 function getRoutineData(routineType) {
-  var rc = state.restConfig;
+  var rc = Object.assign({}, DEFAULT_REST_CONFIG, state.restConfig || {});
   var rA = Number(state.roundsBlockA) || 3;
   var rB = Number(state.roundsBlockB) || 3;
   var rC = Number(state.roundsBlockC) || 3;
@@ -1514,7 +1611,7 @@ function getRoutineData(routineType) {
             restBetweenLimbs: rc.unilateral,
             weightKey: 'kb_heavy',
             defaultWeight: 16.7,
-            restAfter: rc.blockA - 10,
+            restAfter: Math.max(30, rc.blockA - 10),
             tempo: 'Bisagra 2s · Empuje de talón',
             cue: 'Puntera trasera a la altura del talón delantero solo de apoyo. Cadera viaja atrás.',
             diagram: 'rdl_bstance',
@@ -1683,7 +1780,7 @@ function buildStepsForRoutine(routineData) {
 }
 
 /* ============================================================================
-   3. MOTOR DE PESO EN VIVO, RIR, SERIES Y ANTI-DESHACER TEXTO EN iOS
+   3. MOTOR DE PESO EN VIVO, RIR, SERIES, DESHACER PASO Y ANTI-UNDO iOS
    ============================================================================ */
 function clearIOSUndoStack(inputEl) {
   if (!inputEl || !inputEl.parentNode) return;
@@ -1727,12 +1824,9 @@ function onWeightInputLive(weightKey, rawValue, defaultWeight) {
   }
 }
 
-/* Cambia el número de series/vueltas en el Panel y actualiza de inmediato la rutina activa */
 function updateBlockRounds(blockKey, newRounds) {
   blurAnyActiveInput();
-  var days = getCycleDays();
-  var dayObj = days.find(function(d) { return d.day === state.day; }) || days[0];
-  var effectiveType = dayObj.type === 'run_opt' ? state.day6Mode : dayObj.type;
+  var effectiveType = getEffectiveDayType(state.day);
   var prevAnchor = null;
 
   if (effectiveType === 'routineA' || effectiveType === 'routineB') {
@@ -1790,10 +1884,59 @@ function adjustReps(delta) {
   if (repEl) repEl.textContent = state.currentReps;
 }
 
+/* Permite deshacer la última serie/lado si presionaste "Serie Completada" por error */
+function canUndoLastStep() {
+  return state.isResting || state.stepIndex > 0;
+}
+
+function undoLastStep() {
+  blurAnyActiveInput();
+  var effectiveType = getEffectiveDayType(state.day);
+  if (effectiveType !== 'routineA' && effectiveType !== 'routineB') return;
+
+  var rData = getRoutineData(effectiveType);
+  var steps = buildStepsForRoutine(rData);
+  var targetStepIdx = state.isResting ? state.stepIndex : Math.max(0, state.stepIndex - 1);
+  var targetStep = steps[targetStepIdx];
+  if (!targetStep) return;
+
+  clearInterval(timerInterval);
+  state.isResting = false;
+  state.restRemaining = 0;
+  state.restEndTimestamp = null;
+  state.stepIndex = targetStepIdx;
+
+  var ex = targetStep.ex;
+  var exLogs = state.sessionLogs[ex.id] || [];
+  var setEntryIdx = exLogs.findIndex(function(s) { return s.set === targetStep.round; });
+
+  if (setEntryIdx !== -1) {
+    var entry = exLogs[setEntryIdx];
+    if (ex.unilateral && targetStep.limbIndex === 1 && entry.leftReps !== null && entry.leftReps !== undefined) {
+      state.currentReps = Number(entry.rightReps) || ex.defaultReps;
+      state.currentRIR = String(entry.rir || '2');
+      entry.rightReps = null;
+      entry.reps = entry.leftReps + '/-';
+    } else {
+      state.currentReps = Number(ex.unilateral ? entry.leftReps : entry.reps) || ex.defaultReps;
+      state.currentRIR = String(entry.rir || '2');
+      exLogs.splice(setEntryIdx, 1);
+    }
+  } else {
+    state.currentReps = ex.defaultReps;
+  }
+
+  state.expandedExId = ex.id;
+  saveState();
+  syncMetronomeLoop();
+  showToast('↶ Última serie deshecha');
+  render();
+}
+
 function getLastExerciseRecord(exId) {
   for (var i = state.history.length - 1; i >= 0; i--) {
     var item = state.history[i];
-    if (item.exercises && item.exercises[exId] && item.exercises[exId].sets && item.exercises[exId].sets.length > 0) {
+    if (item && item.exercises && item.exercises[exId] && item.exercises[exId].sets && item.exercises[exId].sets.length > 0) {
       return item.exercises[exId];
     }
   }
@@ -1909,9 +2052,7 @@ function playMetronomeTick() {
 
 function syncMetronomeLoop() {
   clearInterval(metroTimer);
-  var days = getCycleDays();
-  var dayObj = days.find(function(d) { return d.day === state.day; }) || days[0];
-  var effectiveType = dayObj.type === 'run_opt' ? state.day6Mode : dayObj.type;
+  var effectiveType = getEffectiveDayType(state.day);
   var isStrength = effectiveType === 'routineA' || effectiveType === 'routineB';
 
   if (state.metroEnabled && isStrength && !state.isResting && state.activeModal === null) {
@@ -2021,9 +2162,11 @@ function finishRestAndAdvance() {
   state.isResting = false;
   state.restRemaining = 0;
   state.restEndTimestamp = null;
-  var days = getCycleDays();
-  var dayObj = days.find(function(d) { return d.day === state.day; }) || days[0];
-  var effectiveType = dayObj.type === 'run_opt' ? state.day6Mode : dayObj.type;
+  var effectiveType = getEffectiveDayType(state.day);
+  if (effectiveType !== 'routineA' && effectiveType !== 'routineB') {
+    render();
+    return;
+  }
   var rData = getRoutineData(effectiveType);
   var steps = buildStepsForRoutine(rData);
 
@@ -2041,11 +2184,11 @@ function finishRestAndAdvance() {
 }
 
 /* ============================================================================
-   5. FLUJO DE "SERIE COMPLETADA", REORDENAMIENTO Y REINICIO SEMANAL
+   5. FLUJO DE "SERIE COMPLETADA", REORDENAMIENTO Y CIERRE SEMANAL
    ============================================================================ */
 function isBlockCompleted(block, logs) {
   return block.exercises.every(function(ex) {
-    var exSets = logs[ex.id] || [];
+    var exSets = (logs && logs[ex.id]) ? logs[ex.id] : [];
     if (exSets.length < block.rounds) return false;
     if (ex.unilateral) {
       return exSets.slice(0, block.rounds).every(function(s) {
@@ -2060,13 +2203,12 @@ function handlePrimaryAction() {
   blurAnyActiveInput();
   if (state.activeModal !== null) {
     state.activeModal = null;
+    syncMetronomeLoop();
     render();
     return;
   }
 
-  var days = getCycleDays();
-  var dayObj = days.find(function(d) { return d.day === state.day; }) || days[0];
-  var effectiveType = dayObj.type === 'run_opt' ? state.day6Mode : dayObj.type;
+  var effectiveType = getEffectiveDayType(state.day);
 
   if (effectiveType === 'run') {
     saveRunSession();
@@ -2099,14 +2241,23 @@ function handlePrimaryAction() {
 
   if (ex.unilateral) {
     if (curStep.limbIndex === 0) {
-      state.sessionLogs[ex.id].push({
-        set: curStep.round,
-        leftReps: state.currentReps,
-        rightReps: null,
-        reps: state.currentReps + '/-',
-        rir: state.currentRIR,
-        weight: usedWeight
-      });
+      var existingLeft = state.sessionLogs[ex.id].find(function(s) { return s.set === curStep.round; });
+      if (existingLeft) {
+        existingLeft.leftReps = state.currentReps;
+        existingLeft.rightReps = null;
+        existingLeft.reps = state.currentReps + '/-';
+        existingLeft.rir = state.currentRIR;
+        existingLeft.weight = usedWeight;
+      } else {
+        state.sessionLogs[ex.id].push({
+          set: curStep.round,
+          leftReps: state.currentReps,
+          rightReps: null,
+          reps: state.currentReps + '/-',
+          rir: state.currentRIR,
+          weight: usedWeight
+        });
+      }
     } else {
       var existing = state.sessionLogs[ex.id].find(function(s) { return s.set === curStep.round; });
       if (existing) {
@@ -2126,12 +2277,19 @@ function handlePrimaryAction() {
       }
     }
   } else {
-    state.sessionLogs[ex.id].push({
-      set: curStep.round,
-      reps: state.currentReps,
-      rir: state.currentRIR,
-      weight: usedWeight
-    });
+    var existingSingle = state.sessionLogs[ex.id].find(function(s) { return s.set === curStep.round; });
+    if (existingSingle) {
+      existingSingle.reps = state.currentReps;
+      existingSingle.rir = state.currentRIR;
+      existingSingle.weight = usedWeight;
+    } else {
+      state.sessionLogs[ex.id].push({
+        set: curStep.round,
+        reps: state.currentReps,
+        rir: state.currentRIR,
+        weight: usedWeight
+      });
+    }
   }
 
   saveState();
@@ -2204,6 +2362,7 @@ function completeStrengthWorkout(rData) {
   saveState();
   showToast('✓ Entrenamiento guardado en Historial');
 }
+
 /* ÚNICO BOTÓN QUE CIERRA Y ARCHIVA LA SEMANA: "Reiniciar ⇄" en la barra inferior */
 function resetWeekAndFlipPattern() {
   blurAnyActiveInput();
@@ -2212,7 +2371,6 @@ function resetWeekAndFlipPattern() {
   if (!state.lastExerciseRecords) state.lastExerciseRecords = {};
   if (!Array.isArray(state.archivedHistory)) state.archivedHistory = [];
 
-  // 1. Guarda el último registro de cada ejercicio para que "📌 Última vez" nunca se pierda
   state.history.forEach(function(rec) {
     if (rec && rec.type === 'strength' && rec.exercises) {
       Object.keys(rec.exercises).forEach(function(exKey) {
@@ -2224,7 +2382,6 @@ function resetWeekAndFlipPattern() {
     }
   });
 
-  // 2. Archiva las sesiones de la semana que se cierra
   if (state.history.length > 0) {
     state.archivedHistory.push({
       id: Date.now(),
@@ -2234,9 +2391,10 @@ function resetWeekAndFlipPattern() {
     });
   }
 
-  // 3. Limpia la semana activa y rota el orden A-B-A <-> B-A-B
   state.history = [];
   state.completedDays = {};
+  state.daySessions = {};
+  state.runDrafts = {};
   state.weekPattern = state.weekPattern === 'ABA' ? 'BAB' : 'ABA';
   state.weekOrder = state.weekPattern;
   state.day = 1;
@@ -2256,25 +2414,11 @@ function toggleWeekPatternManual(newPattern) {
   blurAnyActiveInput();
   var target = newPattern || (state.weekPattern === 'ABA' ? 'BAB' : 'ABA');
   if (state.weekPattern === target) return;
+
+  saveCurrentDaySnapshot();
   state.weekPattern = target;
   state.weekOrder = target;
-
-  // Si hoy no se ha empezado ninguna serie en vivo, sincroniza el primer ejercicio del día
-  var hasActiveSetsToday = Object.keys(state.sessionLogs || {}).length > 0;
-  if (!hasActiveSetsToday && !state.isResting) {
-    var days = getCycleDays();
-    var dayObj = days.find(function(d) { return d.day === state.day; }) || days[0];
-    var effectiveType = dayObj.type === 'run_opt' ? state.day6Mode : dayObj.type;
-    if (effectiveType === 'routineA' || effectiveType === 'routineB') {
-      var rData = getRoutineData(effectiveType);
-      var steps = buildStepsForRoutine(rData);
-      state.stepIndex = 0;
-      if (steps[0]) {
-        state.currentReps = steps[0].ex.defaultReps;
-        state.expandedExId = steps[0].ex.id;
-      }
-    }
-  }
+  restoreDaySnapshot(state.day);
 
   saveState();
   var label = state.weekPattern === 'ABA' ? 'A-B-A' : 'B-A-B';
@@ -2291,10 +2435,10 @@ function resetOnlyCurrentDaySession(showFeedback) {
   state.sessionLogs = {};
   state.manualExpandedBlocks = {};
   state.sessionStartTime = null;
+  if (state.daySessions) delete state.daySessions[state.day];
+  if (state.runDrafts) delete state.runDrafts[state.day];
 
-  var days = getCycleDays();
-  var dayObj = days.find(function(d) { return d.day === state.day; }) || days[0];
-  var effectiveType = dayObj.type === 'run_opt' ? state.day6Mode : dayObj.type;
+  var effectiveType = getEffectiveDayType(state.day);
   if (effectiveType === 'routineA' || effectiveType === 'routineB') {
     var rData = getRoutineData(effectiveType);
     var steps = buildStepsForRoutine(rData);
@@ -2302,35 +2446,14 @@ function resetOnlyCurrentDaySession(showFeedback) {
       state.currentReps = steps[0].ex.defaultReps;
       state.expandedExId = steps[0].ex.id;
     }
+  } else if (effectiveType === 'run') {
+    state.runDistStr = '';
+    state.runTimeStr = '';
+    state.runKcal = '';
   }
   saveState();
   syncMetronomeLoop();
   if (showFeedback) showToast('Sesión de hoy reiniciada');
-  render();
-}
-
-function resetWeekAndFlipPattern() {
-  blurAnyActiveInput();
-  clearInterval(timerInterval);
-  state.weekPattern = state.weekPattern === 'ABA' ? 'BAB' : 'ABA';
-  state.weekOrder = state.weekPattern;
-  state.completedDays = {};
-  state.day = 1;
-  state.activeModal = null;
-  resetOnlyCurrentDaySession(false);
-  saveState();
-  var label = state.weekPattern === 'ABA' ? 'A-B-A' : 'B-A-B';
-  showToast('⇄ Semana reiniciada · Nuevo orden: ' + label);
-  render();
-}
-
-function toggleWeekPatternManual() {
-  state.weekPattern = state.weekPattern === 'ABA' ? 'BAB' : 'ABA';
-  state.weekOrder = state.weekPattern;
-  resetOnlyCurrentDaySession(false);
-  saveState();
-  var label = state.weekPattern === 'ABA' ? 'A-B-A' : 'B-A-B';
-  showToast('Orden semanal cambiado a ' + label);
   render();
 }
 
@@ -2416,7 +2539,7 @@ function onCleanRunInput(field, inputEl) {
     moveCursorToEnd(inputEl);
   } else if (field === 'kcal') {
     var digits = String(inputEl.value || '').replace(/\D/g, '').slice(0, 4);
-    state.runKcal = digits === '' ? '' : (parseInt(digits, 10) || '');
+    state.runKcal = digits === '' ? '' : String(parseInt(digits, 10) || '');
     inputEl.value = state.runKcal;
   }
   saveState();
@@ -2431,7 +2554,7 @@ function onCleanRunInput(field, inputEl) {
       badgeEl.textContent = 'PENDIENTE DE DATOS';
     } else {
       badgeEl.className = 'pace-status ' + (pace.optimal ? 'ok' : 'warn');
-      badgeEl.textContent = pace.optimal ? '✓ ZONA AERÓBICA (5\'40"–6\'00")' : '⚡ FUERA DE RANGO META';
+      badgeEl.textContent = pace.optimal ? '✓ RITMO META (5\'40"–6\'00")' : '⚡ RITMO REGISTRADO';
     }
   }
 }
@@ -2440,7 +2563,7 @@ function saveRunSession() {
   var dVal = parseFloat(String(state.runDistStr || '').replace(',', '.'));
   var totalSec = parseRunTimeSeconds(state.runTimeStr);
   if (!dVal || dVal <= 0 || totalSec <= 0) {
-    showToast('⚠ Ingresa la distancia y el tiempo del trote');
+    showToast('⚠ Ingresa distancia y tiempo antes de guardar');
     return;
   }
   var pace = formatPaceFromRun(dVal, state.runTimeStr);
@@ -2456,17 +2579,18 @@ function saveRunSession() {
     timeFormatted: formattedTime,
     pace: pace.text,
     secPerKm: pace.secPerKm,
-    kcal: state.runKcal || 0
+    kcal: state.runKcal ? Number(state.runKcal) : 0
   };
   upsertHistoryRecord(record);
   state.completedDays[state.day] = true;
+  if (state.runDrafts) delete state.runDrafts[state.day];
   saveState();
   showToast('✓ Trote guardado en Historial');
   render();
 }
 
 /* ============================================================================
-   7. REPORTE SEMANAL PARA CHAT, COMPARTIR NATIVO iOS Y RESPALDO JSON
+   7. REPORTE SEMANAL OBJETIVO, COMPARTIR NATIVO iOS Y BORRADO INDIVIDUAL
    ============================================================================ */
 function buildSummaryText(record) {
   if (!record) return '';
@@ -2568,34 +2692,29 @@ function shareReportNative() {
   }
 }
 
-function exportBackupJSON() {
-  var payload = {
-    app: 'Fitllermo',
-    exportedAt: new Date().toISOString(),
-    weekPattern: state.weekPattern,
-    customWeights: state.customWeights,
-    restConfig: state.restConfig,
-    completedDays: state.completedDays,
-    history: state.history
-  };
-  var blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-  var url = URL.createObjectURL(blob);
-  var a = document.createElement('a');
-  a.href = url;
-  a.download = 'fitllermo-backup-' + new Date().toISOString().slice(0, 10) + '.json';
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-  showToast('📦 Respaldo JSON descargado');
+function deleteHistoryRecord(recordId) {
+  var target = state.history.find(function(h) { return h.id === recordId; });
+  state.history = state.history.filter(function(h) { return h.id !== recordId; });
+  if (target && target.day) {
+    var stillHasDay = state.history.some(function(h) { return h.day === target.day; });
+    if (!stillHasDay) {
+      delete state.completedDays[target.day];
+    }
+  }
+  state._allowEmptyHistorySave = true;
+  saveState();
+  showToast('🗑 Registro eliminado del historial y reporte');
+  render();
 }
 
-function triggerFileImport() {
-  var input = document.getElementById('jsonFileInput');
-  if (input) {
-    input.value = '';
-    input.click();
-  }
+function clearAllHistory() {
+  state.history = [];
+  state.completedDays = {};
+  state.confirmingClearAll = false;
+  state._allowEmptyHistorySave = true;
+  saveState();
+  showToast('Semana actual limpiada');
+  render();
 }
 
 function handleFileImport(event) {
@@ -2608,7 +2727,7 @@ function handleFileImport(event) {
       if (parsed && Array.isArray(parsed.history)) {
         state.history = parsed.history;
         if (parsed.customWeights) state.customWeights = parsed.customWeights;
-        if (parsed.restConfig) state.restConfig = Object.assign({}, state.restConfig, parsed.restConfig);
+        if (parsed.restConfig) state.restConfig = Object.assign({}, DEFAULT_REST_CONFIG, parsed.restConfig);
         if (parsed.completedDays) state.completedDays = parsed.completedDays;
         saveState();
         render();
@@ -2851,12 +2970,12 @@ function getBiomechSVG(diagramType) {
 }
 
 /* ============================================================================
-   9. NAVEGACIÓN Y RENDERIZADO PRINCIPAL (SIN PLANTILLAS ANIDADAS)
+   9. NAVEGACIÓN ENTRE DÍAS Y RENDERIZADO PRINCIPAL
    ============================================================================ */
 function syncRunInputsForDay(d) {
-  if (state.completedDays[d]) {
-    var savedRun = state.history.slice().reverse().find(function(h) {
-      return h.type === 'run' && h.day === d;
+  if (state.completedDays && state.completedDays[d]) {
+    var savedRun = (state.history || []).slice().reverse().find(function(h) {
+      return h && h.type === 'run' && h.day === d;
     });
     if (savedRun) {
       state.runDistStr = String(savedRun.distKm || '');
@@ -2865,6 +2984,13 @@ function syncRunInputsForDay(d) {
       return;
     }
   }
+  var draft = state.runDrafts && state.runDrafts[d];
+  if (draft) {
+    state.runDistStr = String(draft.distStr || '');
+    state.runTimeStr = String(draft.timeStr || '');
+    state.runKcal = String(draft.kcal || '');
+    return;
+  }
   state.runDistStr = '';
   state.runTimeStr = '';
   state.runKcal = '';
@@ -2872,30 +2998,16 @@ function syncRunInputsForDay(d) {
 
 function selectDay(d) {
   blurAnyActiveInput();
+  saveCurrentDaySnapshot();
   clearInterval(timerInterval);
-  state.day = d;
-  state.activeModal = null;
   state.isResting = false;
   state.restRemaining = 0;
   state.restEndTimestamp = null;
-  state.stepIndex = 0;
-  state.sessionLogs = {};
-  state.manualExpandedBlocks = {};
-  state.sessionStartTime = null;
 
-  var days = getCycleDays();
-  var dayObj = days.find(function(x) { return x.day === d; }) || days[0];
-  var effectiveType = dayObj.type === 'run_opt' ? state.day6Mode : dayObj.type;
-  if (effectiveType === 'routineA' || effectiveType === 'routineB') {
-    var rData = getRoutineData(effectiveType);
-    var steps = buildStepsForRoutine(rData);
-    if (steps[0]) {
-      state.currentReps = steps[0].ex.defaultReps;
-      state.expandedExId = steps[0].ex.id;
-    }
-  } else if (effectiveType === 'run') {
-    syncRunInputsForDay(d);
-  }
+  state.day = d;
+  state.activeModal = null;
+  restoreDaySnapshot(d);
+
   saveState();
   syncMetronomeLoop();
   render();
@@ -2923,14 +3035,15 @@ function toggleCompletedBlockExpand(blockId) {
 function renderDaysStrip() {
   var days = getCycleDays();
   var nav = document.getElementById('daysStrip');
+  if (!nav) return;
   var html = [];
   for (var i = 0; i < days.length; i++) {
     var d = days[i];
     var isAct = d.day === state.day && state.activeModal === null;
-    var isDone = !!state.completedDays[d.day];
+    var isDone = !!(state.completedDays && state.completedDays[d.day]);
     var cls = 'day-btn' + (isAct ? ' active' : '') + (isDone ? ' done' : '');
     html.push(
-      '<button class="' + cls + '" onclick="selectDay(' + d.day + ')">' +
+      '<button type="button" class="' + cls + '" onclick="selectDay(' + d.day + ')">' +
       '<span class="d-num">' + d.short + '</span>' +
       '<span class="d-tag">' + d.tag + '</span>' +
       '</button>'
@@ -2951,6 +3064,7 @@ function render() {
   renderDaysStrip();
   var main = document.getElementById('mainContent');
   var mainBtn = document.getElementById('mainActionBtn');
+  if (!main || !mainBtn) return;
 
   if (state.activeModal === 'panel') {
     mainBtn.className = 'btn-primary-action';
@@ -3008,6 +3122,10 @@ function render() {
     ? state.customWeights[curEx.weightKey]
     : '';
 
+  var undoBtnHTML = canUndoLastStep()
+    ? '<button type="button" class="undo-step-btn" title="Deshacer la serie anterior" onclick="undoLastStep()">↶ Deshacer</button>'
+    : '';
+
   var unifiedConsoleHTML = '';
   if (state.isResting) {
     var nextCode = steps[state.stepIndex + 1] ? steps[state.stepIndex + 1].ex.code : 'FIN';
@@ -3015,14 +3133,17 @@ function render() {
       '<section class="unified-console resting">',
       '<div class="uc-top">',
       '<div class="status-pill"><span class="pulse"></span> DESCANSANDO · ' + curStep.restLabel + '</div>',
+      '<div style="display:flex;align-items:center;gap:6px">',
+      undoBtnHTML,
       '<span class="capsule-pill">Paso ' + (state.stepIndex + 1) + '/' + steps.length + '</span>',
+      '</div>',
       '</div>',
       '<div class="uc-rest-body">',
       '<div class="timer-display" id="liveTimerVal">' + state.restRemaining.toFixed(1) + 's</div>',
       '<div class="timer-controls">',
-      '<button class="mini-t-btn" onclick="adjustRestTime(-15)">-15s</button>',
-      '<button class="mini-t-btn" onclick="adjustRestTime(15)">+15s</button>',
-      '<button class="mini-t-btn" onclick="skipRest()">Saltar ⏭</button>',
+      '<button type="button" class="mini-t-btn" onclick="adjustRestTime(-15)">-15s</button>',
+      '<button type="button" class="mini-t-btn" onclick="adjustRestTime(15)">+15s</button>',
+      '<button type="button" class="mini-t-btn" onclick="skipRest()">Saltar ⏭</button>',
       '</div>',
       '<div style="font-family:var(--font-mono);font-size:11px;color:var(--muted)">',
       'SIGUIENTE: <strong style="color:var(--text)">' + nextCode + '</strong>',
@@ -3064,7 +3185,10 @@ function render() {
       '<section class="unified-console">',
       '<div class="uc-top">',
       '<div class="status-pill"><span class="pulse"></span> EN SERIE · ' + curEx.code + ' · VUELTA ' + curStep.round + '/' + curStep.totalRounds + '</div>',
+      '<div style="display:flex;align-items:center;gap:6px">',
+      undoBtnHTML,
       '<button type="button" class="' + metroClass + '" onclick="toggleMetronome()">' + metroText + '</button>',
+      '</div>',
       '</div>',
       '<div class="uc-ex-header">',
       '<div class="uc-ex-title">' + curEx.name + '</div>',
@@ -3201,8 +3325,8 @@ function render() {
       '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px">',
       '<strong style="font-size:12.5px;color:var(--accent)">✓ SESIÓN GUARDADA HOY</strong>',
       '<div style="display:flex;gap:6px">',
-      '<button class="chip-btn active" onclick="copyText(buildSummaryText(state.history.find(function(x){return x.id===' + latestToday.id + ';})))">📋 Copiar</button>',
-      '<button class="chip-btn danger" onclick="deleteHistoryRecord(' + latestToday.id + ')">🗑 Limpiar</button>',
+      '<button type="button" class="chip-btn active" onclick="copyText(buildSummaryText(state.history.find(function(x){return x.id===' + latestToday.id + ';})))">📋 Copiar</button>',
+      '<button type="button" class="chip-btn danger" onclick="deleteHistoryRecord(' + latestToday.id + ')">🗑 Limpiar</button>',
       '</div>',
       '</div>',
       '<div class="summary-pre">' + buildSummaryText(latestToday) + '</div>',
@@ -3240,36 +3364,36 @@ function renderControlPanelView(container) {
   var roundOpts = [2, 3, 4, 5];
   var roundsA_HTML = roundOpts.map(function(n) {
     var cls = 'seg-btn' + (Number(state.roundsBlockA) === n ? ' active' : '');
-    return '<button class="' + cls + '" onclick="updateBlockRounds(\'roundsBlockA\', ' + n + ')">' + n + '</button>';
+    return '<button type="button" class="' + cls + '" onclick="updateBlockRounds(\'roundsBlockA\', ' + n + ')">' + n + '</button>';
   }).join('');
 
   var roundsB_HTML = roundOpts.map(function(n) {
     var cls = 'seg-btn' + (Number(state.roundsBlockB) === n ? ' active' : '');
-    return '<button class="' + cls + '" onclick="updateBlockRounds(\'roundsBlockB\', ' + n + ')">' + n + '</button>';
+    return '<button type="button" class="' + cls + '" onclick="updateBlockRounds(\'roundsBlockB\', ' + n + ')">' + n + '</button>';
   }).join('');
 
   var roundsC_HTML = roundOpts.map(function(n) {
     var cls = 'seg-btn' + (Number(state.roundsBlockC) === n ? ' active' : '');
-    return '<button class="' + cls + '" onclick="updateBlockRounds(\'roundsBlockC\', ' + n + ')">' + n + '</button>';
+    return '<button type="button" class="' + cls + '" onclick="updateBlockRounds(\'roundsBlockC\', ' + n + ')">' + n + '</button>';
   }).join('');
 
   container.innerHTML = [
     '<section class="panel-section">',
     '<div class="panel-sec-title">',
     '<span>⏱ Metrónomo de Tempo (Opción A)</span>',
-    '<button class="chip-btn ' + (state.metroEnabled ? 'active' : '') + '" onclick="toggleMetronome()">' + (state.metroEnabled ? '🔊 ACTIVO' : '🔇 INACTIVO') + '</button>',
+    '<button type="button" class="chip-btn ' + (state.metroEnabled ? 'active' : '') + '" onclick="toggleMetronome()">' + (state.metroEnabled ? '🔊 ACTIVO' : '🔇 INACTIVO') + '</button>',
     '</div>',
     '<div class="panel-row">',
     '<div><div class="panel-lbl">Intervalo del Pulso (Segundos)</div><div class="panel-sub">Emite un click guía durante la serie para contar tus bajadas y pausas.</div></div>',
     '<div style="display:flex;align-items:center;gap:5px">',
-    '<button class="seg-btn" onclick="stepMetroInterval(-0.1)">-0.1s</button>',
+    '<button type="button" class="seg-btn" onclick="stepMetroInterval(-0.1)">-0.1s</button>',
     '<input id="panelMetroInput" type="text" inputmode="decimal" class="weight-field" value="' + Number(state.metroIntervalSec).toFixed(1) + '" oninput="updateMetroInterval(this.value)" onblur="clearIOSUndoStack(this)" />',
-    '<button class="seg-btn" onclick="stepMetroInterval(0.1)">+0.1s</button>',
+    '<button type="button" class="seg-btn" onclick="stepMetroInterval(0.1)">+0.1s</button>',
     '</div>',
     '</div>',
     '<div class="panel-row">',
     '<div class="panel-lbl">Sonido General de la App</div>',
-    '<button class="seg-btn ' + (state.sound ? 'active' : '') + '" onclick="state.sound=!state.sound;saveState();render();">' + (state.sound ? '🔊 Sonido ON' : '🔇 Silencio') + '</button>',
+    '<button type="button" class="seg-btn ' + (state.sound ? 'active' : '') + '" onclick="state.sound=!state.sound;saveState();render();">' + (state.sound ? '🔊 Sonido ON' : '🔇 Silencio') + '</button>',
     '</div>',
     '</section>',
 
@@ -3278,22 +3402,22 @@ function renderControlPanelView(container) {
     '<div class="panel-row">',
     '<div style="flex:1;min-width:0;padding-right:8px"><div class="panel-lbl">Orden Semanal de Fuerza</div><div class="panel-sub">Cambiarlo aquí no archiva la semana (solo "Reiniciar ⇄" cierra la semana).</div></div>',
     '<div class="seg-group nowrap">',
-    '<button class="seg-btn ' + (state.weekPattern === 'ABA' ? 'active' : '') + '" onclick="toggleWeekPatternManual(\'ABA\')">A-B-A</button>',
-    '<button class="seg-btn ' + (state.weekPattern === 'BAB' ? 'active' : '') + '" onclick="toggleWeekPatternManual(\'BAB\')">B-A-B</button>',
+    '<button type="button" class="seg-btn ' + (state.weekPattern === 'ABA' ? 'active' : '') + '" onclick="toggleWeekPatternManual(\'ABA\')">A-B-A</button>',
+    '<button type="button" class="seg-btn ' + (state.weekPattern === 'BAB' ? 'active' : '') + '" onclick="toggleWeekPatternManual(\'BAB\')">B-A-B</button>',
     '</div>',
     '</div>',
     '<div class="panel-row">',
     '<div style="flex:1;min-width:0;padding-right:8px"><div class="panel-lbl">Rutina A · Agarre Dominadas (Define B2)</div><div class="panel-sub">Prono/Neutro activa Curl Bíceps; Supino activa Elev. Laterales.</div></div>',
     '<div class="seg-group">',
-    '<button class="seg-btn ' + (state.gripA === 'prono' ? 'active' : '') + '" onclick="state.gripA=\'prono\';saveState();render();">Prono/Neutro → Bíceps</button>',
-    '<button class="seg-btn ' + (state.gripA === 'supino' ? 'active' : '') + '" onclick="state.gripA=\'supino\';saveState();render();">Supino → Laterales</button>',
+    '<button type="button" class="seg-btn ' + (state.gripA === 'prono' ? 'active' : '') + '" onclick="state.gripA=\'prono\';saveState();render();">Prono/Neutro → Bíceps</button>',
+    '<button type="button" class="seg-btn ' + (state.gripA === 'supino' ? 'active' : '') + '" onclick="state.gripA=\'supino\';saveState();render();">Supino → Laterales</button>',
     '</div>',
     '</div>',
     '<div class="panel-row">',
     '<div style="flex:1;min-width:0;padding-right:8px"><div class="panel-lbl">Rutina B · Variante Tríceps (B2)</div><div class="panel-sub">Elige tu ejercicio de empuje de tríceps en Bloque B.</div></div>',
     '<div class="seg-group nowrap">',
-    '<button class="seg-btn ' + (state.variantB2_B === 'diamante' ? 'active' : '') + '" onclick="state.variantB2_B=\'diamante\';saveState();render();">Diamante</button>',
-    '<button class="seg-btn ' + (state.variantB2_B === 'fondos' ? 'active' : '') + '" onclick="state.variantB2_B=\'fondos\';saveState();render();">Fondos</button>',
+    '<button type="button" class="seg-btn ' + (state.variantB2_B === 'diamante' ? 'active' : '') + '" onclick="state.variantB2_B=\'diamante\';saveState();render();">Diamante</button>',
+    '<button type="button" class="seg-btn ' + (state.variantB2_B === 'fondos' ? 'active' : '') + '" onclick="state.variantB2_B=\'fondos\';saveState();render();">Fondos</button>',
     '</div>',
     '</div>',
     '<div class="panel-row">',
@@ -3310,7 +3434,7 @@ function renderControlPanelView(container) {
     '</div>',
     '<div class="panel-row">',
     '<div style="flex:1;min-width:0;padding-right:8px"><div class="panel-lbl">Reiniciar Solo las Series de Hoy</div><div class="panel-sub">Limpia el progreso del día actual sin cerrar ni rotar la semana.</div></div>',
-    '<button class="seg-btn" onclick="resetOnlyCurrentDaySession(true)">↺ Reiniciar Hoy</button>',
+    '<button type="button" class="seg-btn" onclick="resetOnlyCurrentDaySession(true)">↺ Reiniciar Hoy</button>',
     '</div>',
     '</section>',
 
@@ -3330,6 +3454,109 @@ function renderControlPanelView(container) {
 }
 
 /* ============================================================================
+   11. VISTA DE TROTE URBANO (AUTO-FORMATO "0.00" Y "00:00", LIMPIA)
+   ============================================================================ */
+function renderRunView(container, isOptionalDay6) {
+  var pace = formatPaceFromRun(state.runDistStr, state.runTimeStr);
+  var optSwitch = '';
+  if (isOptionalDay6) {
+    optSwitch = [
+      '<div class="panel-section" style="padding:10px 14px;display:flex;justify-content:space-between;align-items:center">',
+      '<span class="panel-lbl">Día 6 Flexible:</span>',
+      '<div class="seg-group nowrap">',
+      '<button type="button" class="seg-btn ' + (state.day6Mode === 'run' ? 'active' : '') + '" onclick="state.day6Mode=\'run\';syncRunInputsForDay(state.day);saveState();render();">Trote Urbano</button>',
+      '<button type="button" class="seg-btn ' + (state.day6Mode === 'rest' ? 'active' : '') + '" onclick="state.day6Mode=\'rest\';saveState();render();">Descanso</button>',
+      '</div>',
+      '</div>'
+    ].join('');
+  }
+
+  var statusClass = pace.empty ? '' : (pace.optimal ? 'ok' : 'warn');
+  var statusText = pace.empty ? 'PENDIENTE DE DATOS' : (pace.optimal ? '✓ RITMO META (5\'40"–6\'00")' : '⚡ RITMO REGISTRADO');
+
+  var todaySavedRun = (state.history || []).slice().reverse().find(function(h) {
+    return h && h.type === 'run' && h.day === state.day;
+  });
+  var savedRunSummaryHTML = '';
+  if (todaySavedRun && state.completedDays && state.completedDays[state.day]) {
+    savedRunSummaryHTML = [
+      '<div class="summary-card">',
+      '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px">',
+      '<strong style="font-size:12.5px;color:var(--accent)">✓ TROTE GUARDADO EN DÍA ' + state.day + '</strong>',
+      '<div style="display:flex;gap:6px">',
+      '<button type="button" class="chip-btn active" onclick="copyText(buildSummaryText(state.history.find(function(x){return x.id===' + todaySavedRun.id + ';})))">📋 Copiar</button>',
+      '<button type="button" class="chip-btn danger" onclick="deleteHistoryRecord(' + todaySavedRun.id + ')">🗑 Limpiar</button>',
+      '</div>',
+      '</div>',
+      '<div class="summary-pre">' + buildSummaryText(todaySavedRun) + '</div>',
+      '</div>'
+    ].join('');
+  }
+
+  container.innerHTML = [
+    optSwitch,
+    savedRunSummaryHTML,
+    '<section class="run-card">',
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">',
+    '<div style="font-size:16px;font-weight:800">Trote Urbano</div>',
+    '<span class="capsule-pill">Día ' + state.day + '</span>',
+    '</div>',
+    '<div class="run-inputs-grid">',
+    '<div class="run-field-box">',
+    '<label for="runDistInput">Distancia Total (km)</label>',
+    '<input id="runDistInput" type="text" inputmode="numeric" autocomplete="off" autocorrect="off" spellcheck="false" ',
+    'class="run-clean-input" placeholder="0.00" value="' + String(state.runDistStr || '') + '" ',
+    'oninput="onCleanRunInput(\'dist\', this)" onblur="clearIOSUndoStack(this)" />',
+    '</div>',
+    '<div class="run-field-box">',
+    '<label for="runTimeInput">Tiempo Total (mm:ss)</label>',
+    '<input id="runTimeInput" type="text" inputmode="numeric" autocomplete="off" autocorrect="off" spellcheck="false" ',
+    'class="run-clean-input" placeholder="00:00" value="' + String(state.runTimeStr || '') + '" ',
+    'oninput="onCleanRunInput(\'time\', this)" onblur="clearIOSUndoStack(this)" />',
+    '</div>',
+    '</div>',
+    '<div class="run-field-box" style="margin-bottom:12px">',
+    '<label for="runKcalInput">Energía Activa Opcional (kcal)</label>',
+    '<input id="runKcalInput" type="text" inputmode="numeric" autocomplete="off" autocorrect="off" spellcheck="false" ',
+    'class="run-clean-input" placeholder="0" value="' + String(state.runKcal || '') + '" ',
+    'oninput="onCleanRunInput(\'kcal\', this)" onblur="clearIOSUndoStack(this)" />',
+    '</div>',
+    '<div class="run-pace-result">',
+    '<div>',
+    '<span style="font-size:10px;color:var(--muted);display:block;font-family:var(--font-mono)">RITMO PROMEDIO</span>',
+    '<span class="pace-big" id="runLivePace">' + pace.text + '</span>',
+    '</div>',
+    '<span class="pace-status ' + statusClass + '" id="runLiveStatus">' + statusText + '</span>',
+    '</div>',
+    '</section>'
+  ].join('');
+}
+
+function renderRestView(container, isOptionalDay6) {
+  var optSwitch = '';
+  if (isOptionalDay6) {
+    optSwitch = [
+      '<div class="panel-section" style="padding:10px 14px;display:flex;justify-content:space-between;align-items:center">',
+      '<span class="panel-lbl">Día 6 Flexible:</span>',
+      '<div class="seg-group nowrap">',
+      '<button type="button" class="seg-btn ' + (state.day6Mode === 'run' ? 'active' : '') + '" onclick="state.day6Mode=\'run\';syncRunInputsForDay(state.day);saveState();render();">Trote Urbano</button>',
+      '<button type="button" class="seg-btn ' + (state.day6Mode === 'rest' ? 'active' : '') + '" onclick="state.day6Mode=\'rest\';saveState();render();">Descanso</button>',
+      '</div>',
+      '</div>'
+    ].join('');
+  }
+
+  container.innerHTML = [
+    optSwitch,
+    '<div class="run-card" style="text-align:center;padding:28px 18px">',
+    '<div style="font-family:var(--font-mono);font-size:11px;color:var(--accent);font-weight:800;margin-bottom:6px">RECUPERACIÓN SISTÉMICA Y MUSCULAR</div>',
+    '<div style="font-size:20px;font-weight:800;margin-bottom:8px">Día de Descanso</div>',
+    '<p style="font-size:12.5px;color:var(--muted);line-height:1.5;max-width:360px;margin:0 auto">Prioriza pasos suaves, hidratación y meta proteica para supercompensar las sesiones de RIR 1–2.</p>',
+    '</div>'
+  ].join('');
+}
+
+/* ============================================================================
    12. VISTA DE HISTORIAL + REPORTE SEMANAL PARA CHAT + SEMANAS ANTERIORES
    ============================================================================ */
 function toggleArchivedWeeksView() {
@@ -3338,7 +3565,7 @@ function toggleArchivedWeeksView() {
 }
 
 function renderHistoryView(container) {
-  var items = state.history.slice().reverse();
+  var items = (state.history || []).slice().reverse();
   var weeklyReportText = buildWeeklyReportForChat();
 
   var listHTML = '';
@@ -3347,9 +3574,9 @@ function renderHistoryView(container) {
   } else {
     var clearBtnHtml = '';
     if (state.confirmingClearAll) {
-      clearBtnHtml = '<div style="display:flex;gap:4px"><button class="chip-btn active" onclick="clearAllHistory()">Confirmar Borrar Semana</button><button class="chip-btn" onclick="state.confirmingClearAll=false;render();">Cancelar</button></div>';
+      clearBtnHtml = '<div style="display:flex;gap:4px"><button type="button" class="chip-btn active" onclick="clearAllHistory()">Confirmar Borrar Semana</button><button type="button" class="chip-btn" onclick="state.confirmingClearAll=false;render();">Cancelar</button></div>';
     } else {
-      clearBtnHtml = '<button class="chip-btn danger" onclick="state.confirmingClearAll=true;render();">🗑 Limpiar Semana</button>';
+      clearBtnHtml = '<button type="button" class="chip-btn danger" onclick="state.confirmingClearAll=true;render();">🗑 Limpiar Semana</button>';
     }
 
     var cards = items.map(function(rec) {
@@ -3361,8 +3588,8 @@ function renderHistoryView(container) {
         '<div style="font-family:var(--font-mono);font-size:10px;color:var(--muted)">' + rec.date + ' · Día ' + rec.day + '</div>',
         '</div>',
         '<div style="display:flex;gap:6px">',
-        '<button class="chip-btn active" onclick="copyText(buildSummaryText(state.history.find(function(x){return x.id===' + rec.id + ';})))">📋 Copiar</button>',
-        '<button class="chip-btn danger" onclick="deleteHistoryRecord(' + rec.id + ')">🗑 Limpiar</button>',
+        '<button type="button" class="chip-btn active" onclick="copyText(buildSummaryText(state.history.find(function(x){return x.id===' + rec.id + ';})))">📋 Copiar</button>',
+        '<button type="button" class="chip-btn danger" onclick="deleteHistoryRecord(' + rec.id + ')">🗑 Limpiar</button>',
         '</div>',
         '</div>',
         '<div class="summary-pre">' + buildSummaryText(rec) + '</div>',
@@ -3413,8 +3640,8 @@ function renderHistoryView(container) {
     '<div style="font-size:11px;color:var(--muted)">Datos objetivos de la semana en curso. Envíalo o cópialo para analizar tu semana.</div>',
     '</div>',
     '<div style="display:flex;gap:6px">',
-    '<button class="chip-btn active" onclick="copyText(buildWeeklyReportForChat())">📋 Copiar</button>',
-    '<button class="chip-btn" onclick="shareReportNative()">📤 Compartir</button>',
+    '<button type="button" class="chip-btn active" onclick="copyText(buildWeeklyReportForChat())">📋 Copiar</button>',
+    '<button type="button" class="chip-btn" onclick="shareReportNative()">📤 Compartir</button>',
     '</div>',
     '</div>',
     '<div class="summary-pre">' + weeklyReportText + '</div>',
@@ -3422,116 +3649,6 @@ function renderHistoryView(container) {
     listHTML,
     archivedHTML
   ].join('');
-}
-
-function renderRestView(container, isOptionalDay6) {
-  var optSwitch = '';
-  if (isOptionalDay6) {
-    optSwitch = [
-      '<div class="panel-section" style="padding:10px 14px;display:flex;justify-content:space-between;align-items:center">',
-      '<span class="panel-lbl">Día 6 Flexible:</span>',
-      '<div class="seg-group">',
-      '<button class="seg-btn ' + (state.day6Mode === 'run' ? 'active' : '') + '" onclick="state.day6Mode=\'run\';syncRunInputsForDay(state.day);saveState();render();">Trote Urbano</button>',
-      '<button class="seg-btn ' + (state.day6Mode === 'rest' ? 'active' : '') + '" onclick="state.day6Mode=\'rest\';saveState();render();">Descanso</button>',
-      '</div>',
-      '</div>'
-    ].join('');
-  }
-
-  container.innerHTML = [
-    optSwitch,
-    '<div class="run-card" style="text-align:center;padding:28px 18px">',
-    '<div style="font-family:var(--font-mono);font-size:11px;color:var(--accent);font-weight:800;margin-bottom:6px">RECUPERACIÓN SISTÉMICA Y MUSCULAR</div>',
-    '<div style="font-size:20px;font-weight:800;margin-bottom:8px">Día de Descanso</div>',
-    '<p style="font-size:12.5px;color:var(--muted);line-height:1.5;max-width:360px;margin:0 auto">Prioriza pasos suaves, hidratación y meta proteica para supercompensar las sesiones de RIR 1–2.</p>',
-    '</div>'
-  ].join('');
-}
-
-/* ============================================================================
-   12. VISTA DE HISTORIAL + REPORTE SEMANAL PARA CHAT + RESPALDO JSON
-   ============================================================================ */
-function renderHistoryView(container) {
-  var items = state.history.slice().reverse();
-  var weeklyReportText = buildWeeklyReportForChat();
-
-  var listHTML = '';
-  if (items.length === 0) {
-    listHTML = '<div class="run-card" style="text-align:center;padding:24px 16px"><div style="font-size:15px;font-weight:800;margin-bottom:4px">Sin sesiones registradas</div><p style="font-size:12px;color:var(--muted)">Cada vez que completes una rutina o guardes un trote, aparecerá aquí.</p></div>';
-  } else {
-    var clearBtnHtml = '';
-    if (state.confirmingClearAll) {
-      clearBtnHtml = '<div style="display:flex;gap:4px"><button class="chip-btn active" onclick="clearAllHistory()">Confirmar Borrar Todo</button><button class="chip-btn" onclick="state.confirmingClearAll=false;render();">Cancelar</button></div>';
-    } else {
-      clearBtnHtml = '<button class="chip-btn danger" onclick="state.confirmingClearAll=true;render();">🗑 Borrar Todo</button>';
-    }
-
-    var cards = items.map(function(rec) {
-      return [
-        '<div class="summary-card" style="border-color:var(--border)">',
-        '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px">',
-        '<div>',
-        '<strong style="font-size:13px">' + rec.title + '</strong>',
-        '<div style="font-family:var(--font-mono);font-size:10px;color:var(--muted)">' + rec.date + ' · Día ' + rec.day + '</div>',
-        '</div>',
-        '<div style="display:flex;gap:6px">',
-        '<button class="chip-btn active" onclick="copyText(buildSummaryText(state.history.find(function(x){return x.id===' + rec.id + ';})))">📋 Copiar</button>',
-        '<button class="chip-btn danger" onclick="deleteHistoryRecord(' + rec.id + ')">🗑 Limpiar</button>',
-        '</div>',
-        '</div>',
-        '<div class="summary-pre">' + buildSummaryText(rec) + '</div>',
-        '</div>'
-      ].join('');
-    }).join('');
-
-    listHTML = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><span style="font-family:var(--font-mono);font-size:11px;font-weight:800;color:var(--muted)">REGISTROS INDIVIDUALES (' + items.length + ')</span>' + clearBtnHtml + '</div>' + cards;
-  }
-
-  var diagKeysInfo = (state.debugKeysNames && state.debugKeysNames.length > 0)
-    ? state.debugKeysNames.join(', ')
-    : 'ninguna';
-
-  container.innerHTML = [
-    '<section class="summary-card">',
-    '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">',
-    '<div>',
-    '<strong style="font-size:13px;color:var(--accent)">📈 Reporte Semanal para Chat</strong>',
-    '<div style="font-size:11px;color:var(--muted)">Envíalo a tu PC por WhatsApp/AirDrop/Notas o cópialo para analizar tu semana.</div>',
-    '</div>',
-    '<div style="display:flex;gap:6px">',
-    '<button class="chip-btn active" onclick="copyText(buildWeeklyReportForChat())">📋 Copiar</button>',
-    '<button class="chip-btn" onclick="shareReportNative()">📤 Compartir</button>',
-    '</div>',
-    '</div>',
-    '<div class="summary-pre">' + weeklyReportText + '</div>',
-    '</section>',
-
-    '<section class="panel-section">',
-    '<div class="panel-sec-title">',
-    '<span>📲 Respaldo y Recuperación iOS (JSON)</span>',
-    '<span>' + state.history.length + ' sesiones</span>',
-    '</div>',
-    '<div style="font-family:var(--font-mono);font-size:10px;color:var(--muted);margin-bottom:8px;line-height:1.4">',
-    'Diagnóstico localStorage: <strong>' + (state.debugKeysCount || 0) + ' llaves detectadas</strong> (' + diagKeysInfo + ') · <strong>' + state.history.length + ' sesiones recuperadas</strong>.',
-    '</div>',
-    '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">',
-    '<button class="chip-btn active" onclick="rescanLocalStorageManual()">🔍 Re-escanear Memoria</button>',
-    '<button class="chip-btn" onclick="exportBackupJSON()">⬇ Exportar JSON</button>',
-    '<button class="chip-btn" onclick="triggerFileImport()">⬆ Importar JSON</button>',
-    '</div>',
-    '</section>',
-    listHTML
-  ].join('');
-}
-
-function clearAllHistory() {
-  state.history = [];
-  state.completedDays = {};
-  state.confirmingClearAll = false;
-  state._allowEmptyHistorySave = true;
-  saveState();
-  showToast('Historial vaciado');
-  render();
 }
 
 /* ============================================================================
@@ -3561,19 +3678,7 @@ window.addEventListener('pageshow', function() {
 
 setupIOSPWA();
 loadState();
-var initDays = getCycleDays();
-var initDayObj = initDays.find(function(d) { return d.day === state.day; }) || initDays[0];
-var initType = initDayObj.type === 'run_opt' ? state.day6Mode : initDayObj.type;
-if (initType === 'routineA' || initType === 'routineB') {
-  var initData = getRoutineData(initType);
-  var initSteps = buildStepsForRoutine(initData);
-  if (state.stepIndex >= initSteps.length) state.stepIndex = 0;
-  if (!state.expandedExId && initSteps[state.stepIndex]) {
-    state.expandedExId = initSteps[state.stepIndex].ex.id;
-  }
-} else if (initType === 'run') {
-  syncRunInputsForDay(state.day);
-}
+restoreDaySnapshot(state.day);
 render();
 syncSessionAfterWake();
 syncMetronomeLoop();
