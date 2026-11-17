@@ -1049,11 +1049,71 @@
     display: none;
     box-shadow: 0 6px 20px rgba(0,0,0,0.45);
   }
+
+  /* Modal de confirmación para evitar reinicios por error */
+  .confirm-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.72);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    z-index: 120;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 18px;
+  }
+  .confirm-modal {
+    background: var(--card);
+    border: 1px solid var(--border-strong);
+    border-radius: 20px;
+    padding: 18px;
+    width: 100%;
+    max-width: 360px;
+    box-shadow: 0 14px 34px rgba(0, 0, 0, 0.55);
+  }
+  .confirm-title {
+    font-size: 16px;
+    font-weight: 800;
+    color: var(--text);
+    margin-bottom: 6px;
+  }
+  .confirm-desc {
+    font-size: 12.5px;
+    color: var(--muted);
+    line-height: 1.45;
+    margin-bottom: 16px;
+  }
+  .confirm-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .confirm-btn {
+    border-radius: 12px;
+    padding: 11px 12px;
+    font-family: var(--font-ui);
+    font-size: 13px;
+    font-weight: 800;
+    cursor: pointer;
+    text-align: center;
+  }
+  .confirm-btn.cancel {
+    background: var(--card-alt);
+    color: var(--text);
+    border: 1px solid var(--border-strong);
+  }
+  .confirm-btn.danger {
+    background: var(--accent);
+    color: var(--accent-text);
+    border: 1px solid var(--accent);
+  }
 </style>
 </head>
 <body>
 
 <div id="toast" class="toast">Copiado al portapapeles</div>
+<div id="confirmModalRoot"></div>
 
 <div class="app-shell">
   <!-- TOPBAR SUIZO -->
@@ -1072,7 +1132,7 @@
         <button class="chip-btn" id="panelToggleBtn" onclick="toggleViewModal('panel')">⚙️ Panel</button>
         <button class="chip-btn" id="historyToggleBtn" onclick="toggleViewModal('history')">📊 Historial</button>
       </div>
-      <button class="top-reset-week-btn" id="secondaryActionBtn" onclick="resetWeekAndFlipPattern()">
+      <button class="top-reset-week-btn" id="secondaryActionBtn" onclick="requestConfirmAction('resetWeek')">
         Reiniciar Semana ⇄
       </button>
     </div>
@@ -1213,6 +1273,7 @@ var state = {
   runDrafts: {},           // Guarda borradores no guardados de trote por día { [day]: { dist, time, kcal, dateKey } }
   completedDays: {},
   confirmingClearAll: false,
+  pendingConfirmAction: null, // null | 'resetDay' | 'resetWeek'
   // Trote Urbano (vacío en días no realizados, auto-formato 0.00 y 00:00 + selector de fecha)
   runDistStr: '',
   runTimeStr: '',
@@ -1280,6 +1341,13 @@ function getEffectiveDayType(dayNumber) {
   return dayObj.type === 'run_opt' ? state.day6Mode : dayObj.type;
 }
 
+function hasAnyLoggedSets(logsObj) {
+  if (!logsObj || typeof logsObj !== 'object') return false;
+  return Object.keys(logsObj).some(function(k) {
+    return Array.isArray(logsObj[k]) && logsObj[k].length > 0;
+  });
+}
+
 /* Guarda instantánea del día actual para que explorar otros días nunca borre las series hechas */
 function saveCurrentDaySnapshot() {
   if (!state.daySessions || typeof state.daySessions !== 'object') {
@@ -1333,8 +1401,9 @@ function restoreDaySnapshot(targetDay) {
     var rData = getRoutineData(targetType);
     var steps = buildStepsForRoutine(rData);
     var snap = state.daySessions && state.daySessions[targetDay];
+    var hasProgress = snap && (hasAnyLoggedSets(snap.sessionLogs) || snap.sessionCompletedToday);
 
-    if (snap && snap.routineType === targetType) {
+    if (snap && snap.routineType === targetType && hasProgress) {
       state.stepIndex = Math.min(Number(snap.stepIndex) || 0, Math.max(0, steps.length - 1));
       state.sessionLogs = JSON.parse(JSON.stringify(snap.sessionLogs || {}));
       state.manualExpandedBlocks = Object.assign({}, snap.manualExpandedBlocks || {});
@@ -1531,7 +1600,10 @@ function loadState() {
     state.customWeights = Object.assign({}, state.customWeights, mergedWeights);
     state.completedDays = Object.assign({}, state.completedDays, mergedDays);
 
-    if (mergedHistory.length > 0 || mergedArchived.length > 0 || Object.keys(mergedWeights).length > 0) {
+    // Rescata automáticamente cualquier sesión de fuerza que tenga series en daySessions/sessionLogs pero no estuviera en history
+    rescueUncommittedStrengthSessions();
+
+    if (state.history.length > 0 || mergedArchived.length > 0 || Object.keys(mergedWeights).length > 0) {
       saveState();
     }
   } catch (e) {}
@@ -2562,6 +2634,9 @@ function handlePrimaryAction() {
     return (Number(a.set) || 0) - (Number(b.set) || 0);
   });
 
+  // Guarda incrementalmente el avance en el historial desde la primera serie para nunca perder la sesión
+  syncStrengthSessionToHistory(rData, state.day, state.sessionLogs, state.sessionDateKey, state.sessionStartTime, false);
+
   saveState();
   playBeep(784, 0.12, 'sine');
 
@@ -2572,12 +2647,13 @@ function handlePrimaryAction() {
   }
 }
 
-/* Evita que un trote sobrescriba una sesión de fuerza de la misma fecha */
+/* Cada día del ciclo (D1..D7) guarda su propio registro sin pisar otros días que compartan fecha */
 function upsertHistoryRecord(newRecord) {
   var existingIdx = state.history.findIndex(function(h) {
     if (!h || h.type !== newRecord.type) return false;
-    if (h.day && newRecord.day && Number(h.day) === Number(newRecord.day)) return true;
-    if (h.dateKey && newRecord.dateKey && h.dateKey === newRecord.dateKey) return true;
+    if (h.day && newRecord.day) {
+      return Number(h.day) === Number(newRecord.day);
+    }
     return false;
   });
 
@@ -2588,9 +2664,11 @@ function upsertHistoryRecord(newRecord) {
   }
 }
 
-function completeStrengthWorkout(rData) {
-  var durationMin = state.sessionStartTime
-    ? Math.max(1, Math.round((Date.now() - state.sessionStartTime) / 60000))
+function syncStrengthSessionToHistory(rData, dayNum, logsSource, dateKeySource, startTimeSource, isFinalStep) {
+  if (!hasAnyLoggedSets(logsSource)) return;
+
+  var durationMin = startTimeSource
+    ? Math.max(1, Math.round((Date.now() - startTimeSource) / 60000))
     : 38;
 
   if (!state.lastExerciseRecords) state.lastExerciseRecords = {};
@@ -2599,7 +2677,7 @@ function completeStrengthWorkout(rData) {
   rData.blocks.forEach(function(b) {
     b.exercises.forEach(function(ex) {
       var targetSets = getExerciseTargetSets(b, ex);
-      var rawSets = state.sessionLogs[ex.id] || [];
+      var rawSets = (logsSource && logsSource[ex.id]) ? logsSource[ex.id] : [];
       var bySet = {};
       rawSets.forEach(function(s) {
         var sNum = Number(s.set) || 1;
@@ -2628,31 +2706,118 @@ function completeStrengthWorkout(rData) {
     });
   });
 
-  var chosenDateKey = state.sessionDateKey || getTodayDateKey();
+  var chosenDateKey = dateKeySource || getTodayDateKey();
   var humanDate = formatDateKeyForDisplay(chosenDateKey);
 
+  var existingRec = (state.history || []).find(function(h) {
+    return h && h.type === 'strength' && Number(h.day) === Number(dayNum);
+  });
+
   var record = {
-    id: Date.now(),
+    id: existingRec ? existingRec.id : Date.now(),
     dateKey: chosenDateKey,
     date: humanDate,
-    day: state.day,
+    day: dayNum,
     routineType: rData.routineType || (rData.shortName === 'Rutina B' ? 'routineB' : 'routineA'),
     weekPattern: state.weekPattern,
     type: 'strength',
     title: rData.title,
     shortName: rData.shortName,
-    durationMin: durationMin,
+    durationMin: existingRec && !startTimeSource ? existingRec.durationMin : durationMin,
     exercises: exSummary
   };
 
-  state.sessionCompletedToday = true;
+  if (isFinalStep && Number(dayNum) === Number(state.day)) {
+    state.sessionCompletedToday = true;
+  }
   upsertHistoryRecord(record);
-  state.completedDays[state.day] = true;
+  state.completedDays[dayNum] = true;
+}
+
+function rescueUncommittedStrengthSessions() {
+  var days = getCycleDays();
+  days.forEach(function(dObj) {
+    if (dObj.type !== 'routineA' && dObj.type !== 'routineB') return;
+    var dNum = dObj.day;
+    var snap = (state.daySessions && state.daySessions[dNum]) ? state.daySessions[dNum] : null;
+    if (Number(dNum) === Number(state.day) && hasAnyLoggedSets(state.sessionLogs)) {
+      snap = {
+        routineType: dObj.type,
+        sessionLogs: state.sessionLogs,
+        dateKey: state.sessionDateKey,
+        sessionStartTime: state.sessionStartTime
+      };
+    }
+    if (snap && hasAnyLoggedSets(snap.sessionLogs)) {
+      var rType = snap.routineType || dObj.type;
+      var rData = getRoutineData(rType);
+      syncStrengthSessionToHistory(rData, dNum, snap.sessionLogs, snap.dateKey, snap.sessionStartTime, false);
+    }
+  });
+}
+
+function completeStrengthWorkout(rData) {
+  syncStrengthSessionToHistory(rData, state.day, state.sessionLogs, state.sessionDateKey, state.sessionStartTime, true);
   saveState();
   showToast('✓ Entrenamiento guardado en Historial');
 }
 
-/* ÚNICO BOTÓN QUE CIERRA Y ARCHIVA LA SEMANA: "Reiniciar ⇄" en la barra inferior */
+/* Confirmación de seguridad antes de reiniciar el día o la semana */
+function requestConfirmAction(actionType) {
+  blurAnyActiveInput();
+  state.pendingConfirmAction = actionType;
+  renderConfirmModal();
+}
+
+function closeConfirmModal() {
+  state.pendingConfirmAction = null;
+  renderConfirmModal();
+}
+
+function executeConfirmedAction() {
+  var action = state.pendingConfirmAction;
+  state.pendingConfirmAction = null;
+  renderConfirmModal();
+  if (action === 'resetWeek') {
+    resetWeekAndFlipPattern();
+  } else if (action === 'resetDay') {
+    resetOnlyCurrentDaySession(true);
+  }
+}
+
+function renderConfirmModal() {
+  var root = document.getElementById('confirmModalRoot');
+  if (!root) return;
+  if (!state.pendingConfirmAction) {
+    root.innerHTML = '';
+    return;
+  }
+
+  var isWeek = state.pendingConfirmAction === 'resetWeek';
+  var nextOrder = state.weekPattern === 'ABA' ? 'B-A-B' : 'A-B-A';
+  var title = isWeek
+    ? '¿Reiniciar y cerrar la semana?'
+    : '¿Reiniciar la sesión del Día ' + state.day + '?';
+  var desc = isWeek
+    ? 'Las sesiones registradas esta semana se archivarán en "Semanas Anteriores", el reporte actual quedará en cero y el orden rotará a ' + nextOrder + '.'
+    : 'Se borrarán los datos y series registradas hoy en el Día ' + state.day + '. El resto de los días de tu semana se mantendrán intactos.';
+  var confirmLabel = isWeek ? 'Sí, reiniciar semana' : 'Sí, reiniciar día';
+
+  root.innerHTML = [
+    '<div class="confirm-overlay" onclick="closeConfirmModal()">',
+    '<div class="confirm-modal" onclick="event.stopPropagation()">',
+    '<div class="confirm-title">' + title + '</div>',
+    '<div class="confirm-desc">' + desc + '</div>',
+    '<div class="confirm-actions">',
+    '<button type="button" class="confirm-btn cancel" onclick="closeConfirmModal()">Cancelar</button>',
+    '<button type="button" class="confirm-btn danger" onclick="executeConfirmedAction()">' + confirmLabel + '</button>',
+    '</div>',
+    '</div>',
+    '</div>'
+  ].join('');
+}
+
+/* ÚNICO BOTÓN QUE CIERRA Y ARCHIVA LA SEMANA: "Reiniciar Semana ⇄" */
 function resetWeekAndFlipPattern() {
   blurAnyActiveInput();
   clearInterval(timerInterval);
@@ -2728,6 +2893,14 @@ function resetOnlyCurrentDaySession(showFeedback) {
   state.sessionDateKey = getTodayDateKey();
   if (state.daySessions) delete state.daySessions[state.day];
   if (state.runDrafts) delete state.runDrafts[state.day];
+  if (state.completedDays) delete state.completedDays[state.day];
+
+  if (showFeedback) {
+    state.history = (state.history || []).filter(function(h) {
+      return !(h && Number(h.day) === Number(state.day));
+    });
+    state._allowEmptyHistorySave = true;
+  }
 
   var effectiveType = getEffectiveDayType(state.day);
   if (effectiveType === 'routineA' || effectiveType === 'routineB') {
@@ -2745,7 +2918,7 @@ function resetOnlyCurrentDaySession(showFeedback) {
   }
   saveState();
   syncMetronomeLoop();
-  if (showFeedback) showToast('Sesión de hoy reiniciada');
+  if (showFeedback) showToast('Sesión del Día ' + state.day + ' reiniciada');
   render();
 }
 
@@ -2884,7 +3057,7 @@ function buildSessionDateAndResetBarHTML(activeDateKey) {
     '<input type="date" class="run-date-input" value="' + resolvedKey + '" onchange="onRunDateChange(this.value)" />',
     '</div>',
     '</div>',
-    '<button type="button" class="session-reset-btn" onclick="resetOnlyCurrentDaySession(true)">↺ Reiniciar</button>',
+    '<button type="button" class="session-reset-btn" onclick="requestConfirmAction(\'resetDay\')">↺ Reiniciar</button>',
     '</div>'
   ].join('');
 }
@@ -3405,10 +3578,11 @@ function syncRunInputsForDay(d) {
     }
   }
   var draft = getRunDraft(d);
+  var hasDraftData = !!(draft.distStr || draft.timeStr || draft.kcal);
   state.runDistStr = draft.distStr;
   state.runTimeStr = draft.timeStr;
   state.runKcal = draft.kcal;
-  state.runDateKey = draft.dateKey || getTodayDateKey();
+  state.runDateKey = hasDraftData ? (draft.dateKey || getTodayDateKey()) : getTodayDateKey();
 }
 
 function selectDay(d) {
