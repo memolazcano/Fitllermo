@@ -176,6 +176,10 @@
     text-align: center;
     transition: all 0.15s ease;
     position: relative;
+    -webkit-touch-callout: none;
+    -webkit-user-select: none;
+    user-select: none;
+    touch-action: manipulation;
   }
   .day-btn .d-num {
     font-family: var(--font-mono);
@@ -1108,12 +1112,37 @@
     color: var(--accent-text);
     border: 1px solid var(--accent);
   }
+  .day-type-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .day-type-opt {
+    background: var(--card-alt);
+    color: var(--text);
+    border: 1px solid var(--border-strong);
+    border-radius: 12px;
+    padding: 12px 10px;
+    font-family: var(--font-ui);
+    font-size: 13px;
+    font-weight: 800;
+    cursor: pointer;
+    text-align: center;
+    transition: all 0.15s ease;
+  }
+  .day-type-opt.active {
+    background: var(--accent);
+    color: var(--accent-text);
+    border-color: var(--accent);
+  }
 </style>
 </head>
 <body>
 
 <div id="toast" class="toast">Copiado al portapapeles</div>
 <div id="confirmModalRoot"></div>
+<div id="dayTypeModalRoot"></div>
 
 <div class="app-shell">
   <!-- TOPBAR SUIZO -->
@@ -1253,6 +1282,7 @@ var state = {
   roundsBlockC: 3,
   variantB2_B: 'diamante', // 'diamante' | 'fondos'
   day6Mode: 'run',         // 'run' | 'rest'
+  dayOverrides: {},        // Objetivos personalizados por día { [1..7]: 'routineA' | 'routineB' | 'run' | 'rest' }
   // Cargas personalizadas y tiempos de descanso editables
   customWeights: {},
   restConfig: Object.assign({}, DEFAULT_REST_CONFIG),
@@ -1274,6 +1304,7 @@ var state = {
   completedDays: {},
   confirmingClearAll: false,
   pendingConfirmAction: null, // null | 'resetDay' | 'resetWeek'
+  dayMenuTarget: null,        // Día seleccionado al mantener presionado (1..7)
   // Trote Urbano (vacío en días no realizados, auto-formato 0.00 y 00:00 + selector de fecha)
   runDistStr: '',
   runTimeStr: '',
@@ -1324,7 +1355,7 @@ function formatDateKeyForDisplay(dateKey) {
 function getCycleDays() {
   var order = state.weekPattern || state.weekOrder || 'ABA';
   var isABA = order === 'ABA';
-  return [
+  var baseDays = [
     { day: 1, short: 'D1', tag: isABA ? 'Fuerza A' : 'Fuerza B', type: isABA ? 'routineA' : 'routineB' },
     { day: 2, short: 'D2', tag: 'Trote',    type: 'run' },
     { day: 3, short: 'D3', tag: isABA ? 'Fuerza B' : 'Fuerza A', type: isABA ? 'routineB' : 'routineA' },
@@ -1333,11 +1364,26 @@ function getCycleDays() {
     { day: 6, short: 'D6', tag: 'Trote/D',  type: 'run_opt' },
     { day: 7, short: 'D7', tag: 'Descanso', type: 'rest' }
   ];
+  var tagByType = {
+    routineA: 'Fuerza A',
+    routineB: 'Fuerza B',
+    run: 'Trote',
+    rest: 'Descanso'
+  };
+  var overrides = state.dayOverrides || {};
+  return baseDays.map(function(d) {
+    var ov = overrides[d.day];
+    if (ov && tagByType[ov]) {
+      return { day: d.day, short: d.short, tag: tagByType[ov], type: ov };
+    }
+    return d;
+  });
 }
 
-function getEffectiveDayType(dayNumber) {
+function getEffectiveDayType(d) {
   var days = getCycleDays();
-  var dayObj = days.find(function(x) { return x.day === dayNumber; }) || days[0];
+  var dayObj = days.find(function(x) { return Number(x.day) === Number(d); }) || days[0];
+  if (!dayObj) return 'rest';
   return dayObj.type === 'run_opt' ? state.day6Mode : dayObj.type;
 }
 
@@ -1557,6 +1603,7 @@ function loadState() {
         sessionLogs: (preferredConfig.sessionLogs && typeof preferredConfig.sessionLogs === 'object') ? preferredConfig.sessionLogs : {},
         manualExpandedBlocks: (preferredConfig.manualExpandedBlocks && typeof preferredConfig.manualExpandedBlocks === 'object') ? preferredConfig.manualExpandedBlocks : {},
         daySessions: (preferredConfig.daySessions && typeof preferredConfig.daySessions === 'object') ? preferredConfig.daySessions : {},
+        dayOverrides: (preferredConfig.dayOverrides && typeof preferredConfig.dayOverrides === 'object') ? preferredConfig.dayOverrides : {},
         runDrafts: rawDrafts,
         runDistStr: initDistStr,
         runTimeStr: initTimeStr,
@@ -1565,7 +1612,8 @@ function loadState() {
         sessionDateKey: preferredConfig.sessionDateKey || getTodayDateKey(),
         sessionCompletedToday: !!preferredConfig.sessionCompletedToday,
         activeModal: null,
-        confirmingClearAll: false
+        confirmingClearAll: false,
+        dayMenuTarget: null
       });
 
       if (Array.isArray(preferredConfig.history) && preferredConfig.history.length === 0 && mergedArchived.length > 0) {
@@ -1638,6 +1686,7 @@ function saveState() {
       roundsBlockC: state.roundsBlockC,
       variantB2_B: state.variantB2_B,
       day6Mode: state.day6Mode,
+      dayOverrides: state.dayOverrides,
       customWeights: state.customWeights,
       restConfig: state.restConfig,
       stepIndex: state.stepIndex,
@@ -2848,6 +2897,7 @@ function resetWeekAndFlipPattern() {
   state.history = [];
   state.completedDays = {};
   state.daySessions = {};
+  state.dayOverrides = {};
   state.runDrafts = {};
   state.weekPattern = state.weekPattern === 'ABA' ? 'BAB' : 'ABA';
   state.weekOrder = state.weekPattern;
@@ -3621,6 +3671,131 @@ function toggleCompletedBlockExpand(blockId) {
   render();
 }
 
+/* Menú contextual al mantener presionado un día (Fuerza A / Fuerza B / Trote / Descanso) */
+var dayLongPressTimer = null;
+var dayLongPressTriggered = false;
+var dayLongPressStartX = 0;
+var dayLongPressStartY = 0;
+var lastLongPressTs = 0;
+
+function handleDayPointerDown(event, d) {
+  clearTimeout(dayLongPressTimer);
+  dayLongPressTriggered = false;
+  dayLongPressStartX = event && typeof event.clientX === 'number' ? event.clientX : 0;
+  dayLongPressStartY = event && typeof event.clientY === 'number' ? event.clientY : 0;
+
+  dayLongPressTimer = setTimeout(function() {
+    dayLongPressTriggered = true;
+    lastLongPressTs = Date.now();
+    openDayTypeMenu(d);
+  }, 450);
+}
+
+function handleDayPointerMove(event) {
+  if (!dayLongPressTimer || !event) return;
+  var dx = Math.abs((event.clientX || 0) - dayLongPressStartX);
+  var dy = Math.abs((event.clientY || 0) - dayLongPressStartY);
+  if (dx > 10 || dy > 10) {
+    clearTimeout(dayLongPressTimer);
+    dayLongPressTimer = null;
+  }
+}
+
+function handleDayPointerEnd() {
+  clearTimeout(dayLongPressTimer);
+  dayLongPressTimer = null;
+}
+
+function handleDayClick(d) {
+  if (dayLongPressTriggered || (Date.now() - lastLongPressTs < 450)) {
+    dayLongPressTriggered = false;
+    return;
+  }
+  selectDay(d);
+}
+
+function openDayTypeMenu(d) {
+  blurAnyActiveInput();
+  state.dayMenuTarget = d;
+  renderDayTypeModal();
+}
+
+function closeDayTypeMenu() {
+  state.dayMenuTarget = null;
+  renderDayTypeModal();
+}
+
+function setDayTypeOverride(d, newType) {
+  if (!state.dayOverrides || typeof state.dayOverrides !== 'object') {
+    state.dayOverrides = {};
+  }
+  var labelMap = {
+    routineA: 'Fuerza A',
+    routineB: 'Fuerza B',
+    run: 'Trote',
+    rest: 'Descanso'
+  };
+
+  if (Number(d) === Number(state.day)) {
+    saveCurrentDaySnapshot();
+  }
+
+  state.dayOverrides[d] = newType;
+  if (Number(d) === 6 && (newType === 'run' || newType === 'rest')) {
+    state.day6Mode = newType;
+  }
+
+  state.dayMenuTarget = null;
+  renderDayTypeModal();
+
+  if (Number(d) === Number(state.day)) {
+    clearInterval(timerInterval);
+    state.isResting = false;
+    state.restRemaining = 0;
+    state.restEndTimestamp = null;
+    restoreDaySnapshot(d);
+    syncMetronomeLoop();
+  }
+
+  saveState();
+  showToast('Día ' + d + ' cambiado a ' + (labelMap[newType] || newType));
+  render();
+}
+
+function renderDayTypeModal() {
+  var root = document.getElementById('dayTypeModalRoot');
+  if (!root) return;
+  if (!state.dayMenuTarget) {
+    root.innerHTML = '';
+    return;
+  }
+
+  var targetDay = state.dayMenuTarget;
+  var currentType = getEffectiveDayType(targetDay);
+  var options = [
+    { type: 'routineA', label: 'Fuerza A' },
+    { type: 'routineB', label: 'Fuerza B' },
+    { type: 'run', label: 'Trote' },
+    { type: 'rest', label: 'Descanso' }
+  ];
+
+  var optsHTML = options.map(function(opt) {
+    var cls = 'day-type-opt' + (currentType === opt.type ? ' active' : '');
+    return '<button type="button" class="' + cls + '" onclick="setDayTypeOverride(' + targetDay + ', \'' + opt.type + '\')">' + opt.label + '</button>';
+  }).join('');
+
+  root.innerHTML = [
+    '<div class="confirm-overlay" onclick="closeDayTypeMenu()">',
+    '<div class="confirm-modal" onclick="event.stopPropagation()">',
+    '<div class="confirm-title">Objetivo · Día ' + targetDay + '</div>',
+    '<div class="confirm-desc">Elige qué tipo de sesión quieres asignar a este día.</div>',
+    '<div class="day-type-grid">' + optsHTML + '</div>',
+    '<button type="button" class="confirm-btn cancel" style="width:100%" onclick="closeDayTypeMenu()">Cancelar</button>',
+    '</div>',
+    '</div>'
+  ].join('');
+}
+
 function renderDaysStrip() {
   var days = getCycleDays();
   var nav = document.getElementById('daysStrip');
@@ -3632,7 +3807,14 @@ function renderDaysStrip() {
     var isDone = !!(state.completedDays && state.completedDays[d.day]);
     var cls = 'day-btn' + (isAct ? ' active' : '') + (isDone ? ' done' : '');
     html.push(
-      '<button type="button" class="' + cls + '" onclick="selectDay(' + d.day + ')">' +
+      '<button type="button" class="' + cls + '" ' +
+      'onpointerdown="handleDayPointerDown(event, ' + d.day + ')" ' +
+      'onpointermove="handleDayPointerMove(event)" ' +
+      'onpointerup="handleDayPointerEnd()" ' +
+      'onpointercancel="handleDayPointerEnd()" ' +
+      'onpointerleave="handleDayPointerEnd()" ' +
+      'oncontextmenu="event.preventDefault(); return false;" ' +
+      'onclick="handleDayClick(' + d.day + ')">' +
       '<span class="d-num">' + d.short + '</span>' +
       '<span class="d-tag">' + d.tag + '</span>' +
       '</button>'
