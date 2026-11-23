@@ -147,6 +147,7 @@
     font-size: 11px;
     font-weight: 700;
     cursor: pointer;
+    touch-action: manipulation;
     transition: all 0.15s ease;
   }
   .chip-btn.active {
@@ -1158,10 +1159,10 @@
     </div>
     <div class="top-actions">
       <div class="top-actions-row">
-        <button class="chip-btn" id="panelToggleBtn" onclick="toggleViewModal('panel')">⚙️ Panel</button>
-        <button class="chip-btn" id="historyToggleBtn" onclick="toggleViewModal('history')">📊 Historial</button>
+        <button type="button" class="chip-btn" id="panelToggleBtn" onclick="toggleViewModal('panel')">⚙️ Panel</button>
+        <button type="button" class="chip-btn" id="historyToggleBtn" onclick="toggleViewModal('history')">📊 Historial</button>
       </div>
-      <button class="top-reset-week-btn" id="secondaryActionBtn" onclick="requestConfirmAction('resetWeek')">
+      <button type="button" class="top-reset-week-btn" id="secondaryActionBtn" onclick="requestConfirmAction('resetWeek')">
         Reiniciar Semana ⇄
       </button>
     </div>
@@ -1403,7 +1404,7 @@ function saveCurrentDaySnapshot() {
       currentReps: Number(state.currentReps) || 8,
       currentRIR: String(state.currentRIR || '2'),
       expandedExId: state.expandedExId || null,
-      manualExpandedBlocks: Object.assign({}, state.manualExpandedBlocks || {}),
+      manualExpandedBlocks: JSON.parse(JSON.stringify(state.manualExpandedBlocks || {})),
       sessionLogs: JSON.parse(JSON.stringify(state.sessionLogs || {})),
       sessionStartTime: state.sessionStartTime || null,
       sessionLastLogTime: state.sessionLastLogTime || null,
@@ -1414,13 +1415,10 @@ function saveCurrentDaySnapshot() {
       variantB2_B: lockedVarB2
     };
   } else if (curType === 'run') {
-    var cleanDist = (state.runDistStr === '0.00' || state.runDistStr === '0') ? '' : String(state.runDistStr || '');
-    var cleanTime = (state.runTimeStr === '00:00' || state.runTimeStr === '0') ? '' : String(state.runTimeStr || '');
-    var cleanKcal = state.runKcal === '0' ? '' : String(state.runKcal || '');
     state.runDrafts[state.day] = {
-      distStr: cleanDist,
-      timeStr: cleanTime,
-      kcal: cleanKcal,
+      distStr: state.runDistStr || '',
+      timeStr: state.runTimeStr || '',
+      kcal: state.runKcal || '',
       dateKey: state.runDateKey || getTodayDateKey()
     };
   }
@@ -1428,45 +1426,52 @@ function saveCurrentDaySnapshot() {
 
 function getRunDraft(d) {
   var draft = state.runDrafts && state.runDrafts[d];
-  if (!draft || typeof draft !== 'object') {
-    return { distStr: '', timeStr: '', kcal: '', dateKey: getTodayDateKey() };
+  if (draft && typeof draft === 'object') {
+    return {
+      distStr: (draft.distStr === '0.00' || draft.distStr === '0') ? '' : String(draft.distStr || ''),
+      timeStr: (draft.timeStr === '00:00' || draft.timeStr === '0') ? '' : String(draft.timeStr || ''),
+      kcal: draft.kcal === '0' ? '' : String(draft.kcal || ''),
+      dateKey: draft.dateKey || getTodayDateKey()
+    };
   }
-  var dist = (draft.distStr === '0.00' || draft.distStr === '0') ? '' : String(draft.distStr || '');
-  var time = (draft.timeStr === '00:00' || draft.timeStr === '0') ? '' : String(draft.timeStr || '');
-  var kcal = draft.kcal === '0' ? '' : String(draft.kcal || '');
-  var dKey = draft.dateKey || getTodayDateKey();
-  return { distStr: dist, timeStr: time, kcal: kcal, dateKey: dKey };
+  return { distStr: '', timeStr: '', kcal: '', dateKey: getTodayDateKey() };
 }
 
-function restoreDaySnapshot(targetDay) {
-  var targetType = getEffectiveDayType(targetDay);
+function restoreDaySnapshot(d) {
+  var targetType = getEffectiveDayType(d);
   if (targetType === 'routineA' || targetType === 'routineB') {
-    var snap = state.daySessions && state.daySessions[targetDay];
-    var hasProgress = snap && (hasAnyLoggedSets(snap.sessionLogs) || snap.sessionCompletedToday);
-    var opts = hasProgress
-      ? { gripA: snap.gripA || state.gripA, variantB2_B: snap.variantB2_B || state.variantB2_B }
-      : { gripA: state.gripA, variantB2_B: state.variantB2_B };
-    var rData = getRoutineData(targetType, opts);
-    var steps = buildStepsForRoutine(rData);
-
-    if (snap && snap.routineType === targetType && hasProgress) {
-      if (!snap.sessionCompletedToday) {
-        if (targetType === 'routineA' && snap.gripA) state.gripA = snap.gripA;
-        if (targetType === 'routineB' && snap.variantB2_B) state.variantB2_B = snap.variantB2_B;
-      }
-      state.stepIndex = Math.min(Number(snap.stepIndex) || 0, Math.max(0, steps.length - 1));
-      state.sessionLogs = JSON.parse(JSON.stringify(snap.sessionLogs || {}));
-      state.manualExpandedBlocks = Object.assign({}, snap.manualExpandedBlocks || {});
+    var snap = state.daySessions && state.daySessions[d];
+    if (snap && snap.routineType === targetType) {
+      state.stepIndex = Number(snap.stepIndex) || 0;
+      state.currentReps = Number(snap.currentReps) || 8;
+      state.currentRIR = String(snap.currentRIR || '2');
+      state.expandedExId = snap.expandedExId || null;
+      state.manualExpandedBlocks = snap.manualExpandedBlocks ? JSON.parse(JSON.stringify(snap.manualExpandedBlocks)) : {};
+      state.sessionLogs = snap.sessionLogs ? JSON.parse(JSON.stringify(snap.sessionLogs)) : {};
       state.sessionStartTime = snap.sessionStartTime || null;
       state.sessionLastLogTime = snap.sessionLastLogTime || null;
       state.sessionDurationMin = snap.sessionDurationMin || null;
       state.sessionCompletedToday = !!snap.sessionCompletedToday;
-      state.sessionDateKey = snap.dateKey || getTodayDateKey();
-      state.currentRIR = String(snap.currentRIR || '2');
-      var activeStep = steps[state.stepIndex] || steps[0];
-      state.currentReps = Number(snap.currentReps) || (activeStep ? activeStep.ex.defaultReps : 8);
-      state.expandedExId = snap.expandedExId || (activeStep ? activeStep.ex.id : null);
+      var hasProg = hasAnyLoggedSets(state.sessionLogs) || state.sessionCompletedToday;
+      state.sessionDateKey = hasProg ? (snap.dateKey || getTodayDateKey()) : getTodayDateKey();
+      if (hasProg) {
+        if (snap.gripA) state.gripA = snap.gripA;
+        if (snap.variantB2_B) state.variantB2_B = snap.variantB2_B;
+      }
+      var opts = hasProg
+        ? { gripA: snap.gripA || state.gripA, variantB2_B: snap.variantB2_B || state.variantB2_B }
+        : { gripA: state.gripA, variantB2_B: state.variantB2_B };
+      var rDataSnap = getRoutineData(targetType, opts);
+      var stepsSnap = buildStepsForRoutine(rDataSnap);
+      if (state.stepIndex >= stepsSnap.length) {
+        state.stepIndex = Math.max(0, stepsSnap.length - 1);
+      }
+      if (!state.expandedExId && stepsSnap[state.stepIndex]) {
+        state.expandedExId = stepsSnap[state.stepIndex].ex.id;
+      }
     } else {
+      var rDataNew = getRoutineData(targetType);
+      var stepsNew = buildStepsForRoutine(rDataNew);
       state.stepIndex = 0;
       state.sessionLogs = {};
       state.manualExpandedBlocks = {};
@@ -1476,14 +1481,94 @@ function restoreDaySnapshot(targetDay) {
       state.sessionCompletedToday = false;
       state.sessionDateKey = getTodayDateKey();
       state.currentRIR = '2';
-      if (steps[0]) {
-        state.currentReps = steps[0].ex.defaultReps;
-        state.expandedExId = steps[0].ex.id;
+      if (stepsNew[0]) {
+        state.currentReps = stepsNew[0].ex.defaultReps;
+        state.expandedExId = stepsNew[0].ex.id;
       }
     }
   } else if (targetType === 'run') {
-    syncRunInputsForDay(targetDay);
+    syncRunInputsForDay(d);
   }
+}
+
+/* Normaliza cualquier registro (actual o heredado de versiones previas) para evitar errores al abrir Historial */
+function normalizeHistoryRecord(rec) {
+  if (!rec || typeof rec !== 'object') return null;
+  var type = rec.type === 'run' ? 'run' : (rec.type === 'strength' ? 'strength' : null);
+  if (!type) return null;
+
+  var dateKey = (typeof rec.dateKey === 'string' && rec.dateKey) ? rec.dateKey : getTodayDateKey();
+  var dateStr = (typeof rec.date === 'string' && rec.date) ? rec.date : formatDateKeyForDisplay(dateKey);
+  var safeId = (rec.id !== undefined && rec.id !== null && rec.id !== '')
+    ? rec.id
+    : (dateKey + '_' + type + '_' + (rec.day || 0));
+
+  if (type === 'run') {
+    return {
+      id: safeId,
+      dateKey: dateKey,
+      date: dateStr,
+      type: 'run',
+      day: Number(rec.day) || 0,
+      dist: rec.dist !== undefined && rec.dist !== null ? String(rec.dist) : '0.00',
+      time: rec.time !== undefined && rec.time !== null ? String(rec.time) : '00:00',
+      pace: rec.pace !== undefined && rec.pace !== null ? String(rec.pace) : '--:-- /km',
+      kcal: rec.kcal ? Number(rec.kcal) : null
+    };
+  }
+
+  var safeExercises = {};
+  if (rec.exercises && typeof rec.exercises === 'object' && !Array.isArray(rec.exercises)) {
+    Object.keys(rec.exercises).forEach(function(exId) {
+      var ex = rec.exercises[exId];
+      if (!ex || typeof ex !== 'object') return;
+      var rawSets = Array.isArray(ex.sets) ? ex.sets : [];
+      var bySet = {};
+      rawSets.forEach(function(st, idx) {
+        if (!st || typeof st !== 'object') return;
+        var sNum = Number(st.set) || (idx + 1);
+        bySet[sNum] = {
+          set: sNum,
+          reps: st.reps !== undefined && st.reps !== null ? st.reps : '-',
+          leftReps: st.leftReps !== undefined ? st.leftReps : null,
+          rightReps: st.rightReps !== undefined ? st.rightReps : null,
+          rir: st.rir !== undefined && st.rir !== null ? String(st.rir) : '2',
+          weight: Number(st.weight) || 0
+        };
+      });
+      var cleanSets = Object.keys(bySet).map(function(k) { return bySet[k]; }).sort(function(a, b) {
+        return a.set - b.set;
+      });
+      if (cleanSets.length > 0) {
+        safeExercises[exId] = {
+          code: ex.code ? String(ex.code) : exId,
+          name: ex.name ? String(ex.name) : exId,
+          weight: Number(ex.weight) || 0,
+          sets: cleanSets
+        };
+      }
+    });
+  }
+
+  var routineType = rec.routineType === 'routineB' ? 'routineB' : 'routineA';
+  var routineName = (typeof rec.routine === 'string' && rec.routine.trim())
+    ? rec.routine
+    : (routineType === 'routineB' ? 'Rutina B' : 'Rutina A');
+
+  return {
+    id: safeId,
+    dateKey: dateKey,
+    date: dateStr,
+    type: 'strength',
+    day: Number(rec.day) || 0,
+    routineType: routineType,
+    routine: routineName,
+    gripA: rec.gripA || state.gripA,
+    variantB2_B: rec.variantB2_B || state.variantB2_B,
+    durationMin: Number(rec.durationMin) || 38,
+    isCompleted: !!rec.isCompleted,
+    exercises: safeExercises
+  };
 }
 
 /* Escáner universal con normalización profunda a prueba de fallos */
@@ -1492,7 +1577,11 @@ function loadState() {
     var keysToScan = [];
     for (var i = 0; i < localStorage.length; i++) {
       var kName = localStorage.key(i);
-      if (kName && keysToScan.indexOf(kName) === -1) {
+      if (
+        kName &&
+        (kName.toLowerCase().indexOf('fitllermo') !== -1 || KNOWN_STORAGE_KEYS.indexOf(kName) !== -1) &&
+        keysToScan.indexOf(kName) === -1
+      ) {
         keysToScan.push(kName);
       }
     }
@@ -1523,15 +1612,14 @@ function loadState() {
 
         if (Array.isArray(parsed.history) && parsed.history.length > 0) {
           for (var hIdx = 0; hIdx < parsed.history.length; hIdx++) {
-            var item = parsed.history[hIdx];
-            if (!item || typeof item !== 'object') continue;
-            var itemId = item.id || (item.date + '_' + item.type + '_' + item.day);
+            var normalizedItem = normalizeHistoryRecord(parsed.history[hIdx]);
+            if (!normalizedItem) continue;
+            var itemId = String(normalizedItem.id);
             var alreadyExists = mergedHistory.some(function(existing) {
-              var exId = existing.id || (existing.date + '_' + existing.type + '_' + existing.day);
-              return exId === itemId;
+              return String(existing.id) === itemId;
             });
             if (!alreadyExists) {
-              mergedHistory.push(item);
+              mergedHistory.push(normalizedItem);
             }
           }
         }
@@ -4167,18 +4255,28 @@ function renderRestView(container, isOptionalDay6) {
 /* ============================================================================
    12. REPORTES OBJETIVOS (SIN RECOMENDACIONES NI EMOTICONES) E HISTORIAL
    ============================================================================ */
+function escapeHtml(str) {
+  return String(str === undefined || str === null ? '' : str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 function buildSummaryText(rec) {
-  if (!rec) return '';
-  if (rec.type === 'run') {
-    var kcalStr = rec.kcal ? ' | Energia: ' + rec.kcal + ' kcal' : '';
-    return 'FITLLERMO · TROTE URBANO (' + rec.date + ')\n' +
-      'Distancia: ' + rec.dist + ' km | Tiempo: ' + rec.time + ' | Ritmo: ' + rec.pace + kcalStr;
+  var safeRec = normalizeHistoryRecord(rec);
+  if (!safeRec) return '';
+  if (safeRec.type === 'run') {
+    var kcalStr = safeRec.kcal ? ' | Energia: ' + safeRec.kcal + ' kcal' : '';
+    return 'FITLLERMO · TROTE URBANO (' + safeRec.date + ')\n' +
+      'Distancia: ' + safeRec.dist + ' km | Tiempo: ' + safeRec.time + ' | Ritmo: ' + safeRec.pace + kcalStr;
   }
   var lines = [
-    'FITLLERMO · ' + rec.routine.toUpperCase() + ' (' + rec.date + ' · ' + rec.durationMin + ' min)'
+    'FITLLERMO · ' + String(safeRec.routine || 'RUTINA').toUpperCase() + ' (' + safeRec.date + ' · ' + safeRec.durationMin + ' min)'
   ];
-  Object.keys(rec.exercises || {}).forEach(function(k) {
-    var ex = rec.exercises[k];
+  Object.keys(safeRec.exercises || {}).forEach(function(k) {
+    var ex = safeRec.exercises[k];
+    if (!ex || !Array.isArray(ex.sets)) return;
     var setsStr = ex.sets.map(function(s) { return s.reps + '@RIR' + s.rir; }).join(', ');
     var wStr = ex.weight ? ex.weight + ' kg' : 'PC';
     lines.push('• ' + ex.code + '. ' + ex.name + ' [' + wStr + ']: ' + setsStr);
@@ -4188,18 +4286,23 @@ function buildSummaryText(rec) {
 
 /* Reporte semanal objetivo: esquema cronológico real sin emoticones ni agarres en encabezado */
 function buildWeeklyReportForChat() {
-  var sortedSessions = state.history.slice().sort(function(a, b) {
-    var kA = a.dateKey || '';
-    var kB = b.dateKey || '';
-    if (kA !== kB) return kA < kB ? -1 : 1;
-    return (Number(a.day) || 0) - (Number(b.day) || 0);
-  });
+  var rawList = Array.isArray(state.history) ? state.history : [];
+  var sortedSessions = rawList
+    .map(normalizeHistoryRecord)
+    .filter(function(item) { return !!item; })
+    .sort(function(a, b) {
+      var kA = a.dateKey || '';
+      var kB = b.dateKey || '';
+      if (kA !== kB) return kA < kB ? -1 : 1;
+      return (Number(a.day) || 0) - (Number(b.day) || 0);
+    });
 
   var strengthSessions = sortedSessions.filter(function(h) { return h.type === 'strength'; });
   var runSessions = sortedSessions.filter(function(h) { return h.type === 'run'; });
 
   var dynamicScheme = strengthSessions.map(function(s) {
-    if (s.routineType === 'routineB' || (s.routine && s.routine.indexOf('B') !== -1)) return 'B';
+    var rName = typeof s.routine === 'string' ? s.routine : '';
+    if (s.routineType === 'routineB' || rName.indexOf('B') !== -1) return 'B';
     return 'A';
   }).join('-');
   if (!dynamicScheme) {
@@ -4228,6 +4331,7 @@ function buildWeeklyReportForChat() {
       out.push((idx + 1) + '. [' + rec.date + '] ' + rec.routine + ' (' + rec.durationMin + ' min):');
       Object.keys(rec.exercises || {}).forEach(function(exId) {
         var ex = rec.exercises[exId];
+        if (!ex || !Array.isArray(ex.sets)) return;
         var setsTxt = ex.sets.map(function(s) { return s.reps + '@RIR' + s.rir; }).join(' | ');
         var wTxt = ex.weight ? ex.weight + ' kg' : 'PC';
         var progFlag = '';
@@ -4250,6 +4354,24 @@ function buildWeeklyReportForChat() {
   return out.join('\n');
 }
 
+function copyWeeklyReport() {
+  copyText(buildWeeklyReportForChat());
+}
+
+function shareWeeklyReport() {
+  shareReportNative(buildWeeklyReportForChat());
+}
+
+function copyHistoryRecord(recordId) {
+  var rec = (state.history || []).find(function(h) { return h && String(h.id) === String(recordId); });
+  if (rec) copyText(buildSummaryText(rec));
+}
+
+function copyArchivedWeek(idx) {
+  var wk = Array.isArray(state.archivedHistory) ? state.archivedHistory[idx] : null;
+  if (wk && wk.reportText) copyText(wk.reportText);
+}
+
 function shareReportNative(text) {
   if (!text) return;
   if (navigator.share) {
@@ -4263,13 +4385,13 @@ function shareReportNative(text) {
 }
 
 function deleteHistoryRecord(recordId) {
-  var idx = state.history.findIndex(function(h) { return Number(h.id) === Number(recordId); });
+  var idx = (state.history || []).findIndex(function(h) { return h && String(h.id) === String(recordId); });
   if (idx === -1) return;
   var removed = state.history[idx];
   state.history.splice(idx, 1);
 
   if (removed && removed.day) {
-    var stillHasDay = state.history.some(function(h) { return Number(h.day) === Number(removed.day); });
+    var stillHasDay = state.history.some(function(h) { return h && Number(h.day) === Number(removed.day); });
     if (!stillHasDay) {
       delete state.completedDays[removed.day];
       if (state.daySessions && state.daySessions[removed.day]) {
@@ -4286,6 +4408,9 @@ function deleteHistoryRecord(recordId) {
     }
   }
 
+  if (state.history.length === 0) {
+    state._allowEmptyHistorySave = true;
+  }
   saveState();
   showToast('✓ Registro eliminado');
   render();
@@ -4314,77 +4439,86 @@ function clearAllHistory() {
 }
 
 function renderHistoryView(container) {
-  var weeklyReport = buildWeeklyReportForChat();
-  var itemsHTML = state.history.length === 0
-    ? '<div style="text-align:center;color:var(--muted);padding:22px 0;font-size:13px">Aún no hay entrenamientos en la semana actual.</div>'
-    : state.history.slice().reverse().map(function(rec) {
-        var txt = buildSummaryText(rec);
-        var encoded = encodeURIComponent(txt);
-        return [
-          '<div class="panel-section" style="padding:12px">',
-            '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px">',
-              '<strong style="font-size:12.5px">' + (rec.type === 'run' ? 'Trote Urbano' : rec.routine) + ' · ' + rec.date + '</strong>',
-              '<div style="display:flex;gap:5px">',
-                '<button type="button" class="chip-btn" style="padding:4px 8px;font-size:10px" onclick="copyEncoded(\'' + encoded + '\')">📋 Copiar</button>',
-                '<button type="button" class="chip-btn danger" style="padding:4px 8px;font-size:10px" onclick="deleteHistoryRecord(' + rec.id + ')">🗑 Limpiar</button>',
+  try {
+    var safeHistory = (Array.isArray(state.history) ? state.history : [])
+      .map(normalizeHistoryRecord)
+      .filter(function(item) { return !!item; });
+
+    var weeklyReport = buildWeeklyReportForChat();
+    var itemsHTML = safeHistory.length === 0
+      ? '<div style="text-align:center;color:var(--muted);padding:22px 0;font-size:13px">Aún no hay entrenamientos en la semana actual.</div>'
+      : safeHistory.slice().reverse().map(function(rec) {
+          var txt = buildSummaryText(rec);
+          var safeIdAttr = escapeHtml(String(rec.id)).replace(/'/g, '&#39;');
+          var titleLabel = rec.type === 'run' ? 'Trote Urbano' : rec.routine;
+          return [
+            '<div class="panel-section" style="padding:12px">',
+              '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px">',
+                '<strong style="font-size:12.5px">' + escapeHtml(titleLabel) + ' · ' + escapeHtml(rec.date) + '</strong>',
+                '<div style="display:flex;gap:5px">',
+                  '<button type="button" class="chip-btn" style="padding:4px 8px;font-size:10px" onclick="copyHistoryRecord(\'' + safeIdAttr + '\')">📋 Copiar</button>',
+                  '<button type="button" class="chip-btn danger" style="padding:4px 8px;font-size:10px" onclick="deleteHistoryRecord(\'' + safeIdAttr + '\')">🗑 Limpiar</button>',
+                '</div>',
               '</div>',
-            '</div>',
-            '<pre class="summary-pre" style="margin-bottom:0">' + txt + '</pre>',
-          '</div>'
-        ].join('');
-      }).join('');
+              '<pre class="summary-pre" style="margin-bottom:0">' + escapeHtml(txt) + '</pre>',
+            '</div>'
+          ].join('');
+        }).join('');
 
-  var archivedCount = Array.isArray(state.archivedHistory) ? state.archivedHistory.length : 0;
-  var archivedSectionHTML = '';
-  if (archivedCount > 0) {
-    var archBody = '';
-    if (state.showArchivedWeeks) {
-      archBody = state.archivedHistory.map(function(wk) {
-        var encWk = encodeURIComponent(wk.reportText || '');
-        return [
-          '<div class="panel-section" style="padding:12px;margin-top:8px;border-style:dashed">',
-            '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px">',
-              '<strong style="font-size:12px;color:var(--muted)">Semana cerrada ' + wk.closedAt + ' (' + wk.pattern + ')</strong>',
-              '<button type="button" class="chip-btn" style="padding:4px 8px;font-size:10px" onclick="copyEncoded(\'' + encWk + '\')">📋 Copiar</button>',
-            '</div>',
-            '<pre class="summary-pre" style="margin-bottom:0">' + (wk.reportText || '') + '</pre>',
-          '</div>'
-        ].join('');
-      }).join('');
+    var archivedList = Array.isArray(state.archivedHistory) ? state.archivedHistory : [];
+    var archivedCount = archivedList.length;
+    var archivedSectionHTML = '';
+    if (archivedCount > 0) {
+      var archBody = '';
+      if (state.showArchivedWeeks) {
+        archBody = archivedList.map(function(wk, wkIdx) {
+          if (!wk || typeof wk !== 'object') return '';
+          var wkDate = wk.closedAt ? String(wk.closedAt) : '';
+          var wkPattern = wk.pattern ? String(wk.pattern) : '';
+          var wkReport = wk.reportText ? String(wk.reportText) : '';
+          return [
+            '<div class="panel-section" style="padding:12px;margin-top:8px;border-style:dashed">',
+              '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px">',
+                '<strong style="font-size:12px;color:var(--muted)">Semana cerrada ' + escapeHtml(wkDate) + (wkPattern ? ' (' + escapeHtml(wkPattern) + ')' : '') + '</strong>',
+                '<button type="button" class="chip-btn" style="padding:4px 8px;font-size:10px" onclick="copyArchivedWeek(' + wkIdx + ')">📋 Copiar</button>',
+              '</div>',
+              '<pre class="summary-pre" style="margin-bottom:0">' + escapeHtml(wkReport) + '</pre>',
+            '</div>'
+          ].join('');
+        }).join('');
+      }
+      archivedSectionHTML = [
+        '<div style="margin-top:14px">',
+          '<button type="button" class="chip-btn" style="width:100%;padding:10px;text-align:center" onclick="state.showArchivedWeeks=!state.showArchivedWeeks;render()">',
+            (state.showArchivedWeeks ? '▲ Ocultar Semanas Anteriores (' + archivedCount + ')' : '📁 Ver Semanas Anteriores (' + archivedCount + ')'),
+          '</button>',
+          archBody,
+        '</div>'
+      ].join('');
     }
-    archivedSectionHTML = [
-      '<div style="margin-top:14px">',
-        '<button type="button" class="chip-btn" style="width:100%;padding:10px;text-align:center" onclick="state.showArchivedWeeks=!state.showArchivedWeeks;render()">',
-          (state.showArchivedWeeks ? '▲ Ocultar Semanas Anteriores (' + archivedCount + ')' : '📁 Ver Semanas Anteriores (' + archivedCount + ')'),
-        '</button>',
-        archBody,
-      '</div>'
-    ].join('');
-  }
 
-  container.innerHTML = [
-    '<div class="summary-card">',
-      '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px">',
-        '<span style="font-family:var(--font-mono);font-size:11px;font-weight:800;color:var(--accent)">REPORTE DE LA SEMANA ACTUAL</span>',
-        '<div style="display:flex;gap:5px">',
-          '<button type="button" class="chip-btn" style="padding:5px 9px;font-size:10.5px" onclick="copyEncoded(\'' + encodeURIComponent(weeklyReport) + '\')">📋 Copiar</button>',
-          '<button type="button" class="chip-btn active" style="padding:5px 9px;font-size:10.5px" onclick="shareReportNative(decodeURIComponent(\'' + encodeURIComponent(weeklyReport) + '\'))">📤 Compartir</button>',
+    container.innerHTML = [
+      '<div class="summary-card">',
+        '<div style="display:flex;justify-content:space-between;align-items:center;gap:6px">',
+          '<span style="font-family:var(--font-mono);font-size:11px;font-weight:800;color:var(--accent)">REPORTE DE LA SEMANA ACTUAL</span>',
+          '<div style="display:flex;gap:5px">',
+            '<button type="button" class="chip-btn" style="padding:5px 9px;font-size:10.5px" onclick="copyWeeklyReport()">📋 Copiar</button>',
+            '<button type="button" class="chip-btn active" style="padding:5px 9px;font-size:10.5px" onclick="shareWeeklyReport()">📤 Compartir</button>',
+          '</div>',
         '</div>',
+        '<pre class="summary-pre" style="margin-bottom:0">' + escapeHtml(weeklyReport) + '</pre>',
       '</div>',
-      '<pre class="summary-pre" style="margin-bottom:0">' + weeklyReport + '</pre>',
-    '</div>',
 
-    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;padding:0 2px">',
-      '<span style="font-family:var(--font-mono);font-size:11px;font-weight:800;color:var(--muted)">SESIONES DE ESTA SEMANA (' + state.history.length + ')</span>',
-      state.history.length > 0 ? '<button type="button" class="chip-btn danger" style="padding:5px 9px;font-size:10px" onclick="clearAllHistory()">' + (state.confirmingClearAll ? 'Confirmar Borrar Todo' : 'Limpiar Semana') + '</button>' : '',
-    '</div>',
-    itemsHTML,
-    archivedSectionHTML
-  ].join('');
-}
-
-function copyEncoded(encodedStr) {
-  copyText(decodeURIComponent(encodedStr));
+      '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;padding:0 2px">',
+        '<span style="font-family:var(--font-mono);font-size:11px;font-weight:800;color:var(--muted)">SESIONES DE ESTA SEMANA (' + safeHistory.length + ')</span>',
+        safeHistory.length > 0 ? '<button type="button" class="chip-btn danger" style="padding:5px 9px;font-size:10px" onclick="clearAllHistory()">' + (state.confirmingClearAll ? 'Confirmar Borrar Todo' : 'Limpiar Semana') + '</button>' : '',
+      '</div>',
+      itemsHTML,
+      archivedSectionHTML
+    ].join('');
+  } catch (err) {
+    container.innerHTML = '<div class="panel-section" style="text-align:center;color:var(--muted);font-size:12.5px">No se pudo leer un registro antiguo del historial.</div>';
+  }
 }
 
 function copyText(text) {
