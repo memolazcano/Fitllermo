@@ -2518,18 +2518,63 @@ function getOverloadSuggestion(ex) {
 }
 
 /* ============================================================================
-   4. AUDIO SINTÉTICO (CAMPANA DESCANSO + PULSO METRÓNOMO)
+   4. AUDIO SINTÉTICO (CAMPANA DESCANSO + METRÓNOMO DE PRECISIÓN HARDWARE)
    ============================================================================ */
+var metroNextNoteTime = 0;
+var metroLastScheduledTime = 0;
+var metroKeepAliveNode = null;
+var metroSilentBuffer = null;
+
 function getAudioContext() {
   var AudioCtx = window.AudioContext || window.webkitAudioContext;
   if (!AudioCtx) return null;
-  if (!sharedAudioCtx) {
+  try {
+    // Fuerza sesión 'playback' en iOS Safari para sonar por altavoz aunque el interruptor lateral esté en silencio
+    if ('audioSession' in navigator && navigator.audioSession) {
+      if (navigator.audioSession.type !== 'playback') {
+        navigator.audioSession.type = 'playback';
+      }
+    }
+  } catch (e) {}
+
+  if (!sharedAudioCtx || sharedAudioCtx.state === 'closed') {
     sharedAudioCtx = new AudioCtx();
+    metroSilentBuffer = null;
+    metroKeepAliveNode = null;
   }
-  if (sharedAudioCtx.state === 'suspended') {
+  if (sharedAudioCtx.state === 'suspended' || sharedAudioCtx.state === 'interrupted') {
     sharedAudioCtx.resume().catch(function() {});
   }
   return sharedAudioCtx;
+}
+
+// Mantiene despierto el hardware de audio en iOS durante pausas largas (ej. 2.0s) para evitar latencia irregular
+function startAudioKeepAlive(ctx) {
+  if (!ctx || metroKeepAliveNode) return;
+  try {
+    if (!metroSilentBuffer) {
+      metroSilentBuffer = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+    }
+    var src = ctx.createBufferSource();
+    src.buffer = metroSilentBuffer;
+    src.loop = true;
+    var silentGain = ctx.createGain();
+    silentGain.gain.value = 0.00001;
+    src.connect(silentGain);
+    silentGain.connect(ctx.destination);
+    src.start();
+    metroKeepAliveNode = src;
+  } catch (e) {}
+}
+
+function stopAudioKeepAlive() {
+  if (metroKeepAliveNode) {
+    try {
+      metroKeepAliveNode.stop();
+      metroKeepAliveNode.disconnect();
+    } catch (e) {}
+    metroKeepAliveNode = null;
+  }
 }
 
 function playBell() {
@@ -2537,57 +2582,124 @@ function playBell() {
   try {
     var ctx = getAudioContext();
     if (!ctx) return;
+    var now = ctx.currentTime;
     [880, 1318.5].forEach(function(freq, idx) {
+      var startAt = now + idx * 0.14;
       var osc = ctx.createOscillator();
       var gain = ctx.createGain();
       osc.type = 'sine';
-      osc.frequency.setValueAtTime(freq, ctx.currentTime + idx * 0.14);
-      gain.gain.setValueAtTime(0.001, ctx.currentTime + idx * 0.14);
-      gain.gain.exponentialRampToValueAtTime(0.22, ctx.currentTime + idx * 0.14 + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + idx * 0.14 + 0.65);
+      osc.frequency.setValueAtTime(freq, startAt);
+      gain.gain.setValueAtTime(0.001, startAt);
+      gain.gain.exponentialRampToValueAtTime(0.55, startAt + 0.015);
+      gain.gain.exponentialRampToValueAtTime(0.0001, startAt + 0.65);
       osc.connect(gain);
       gain.connect(ctx.destination);
-      osc.start(ctx.currentTime + idx * 0.14);
-      osc.stop(ctx.currentTime + idx * 0.14 + 0.68);
+      osc.start(startAt);
+      osc.stop(startAt + 0.68);
     });
   } catch (e) {}
 }
 
-function playMetroTick() {
-  if (!state.metroEnabled || state.isResting || state.activeModal) return;
-  var effectiveType = getEffectiveDayType(state.day);
-  if (effectiveType !== 'routineA' && effectiveType !== 'routineB') return;
+// Pulso percusivo de alta proyección (tipo woodblock + transiente) agendado en el reloj exacto del DSP
+function scheduleMetroTickAt(ctx, when) {
   try {
-    var ctx = getAudioContext();
-    if (!ctx) return;
-    var osc = ctx.createOscillator();
-    var gain = ctx.createGain();
-    osc.type = 'triangle';
-    osc.frequency.setValueAtTime(1050, ctx.currentTime);
-    gain.gain.setValueAtTime(0.001, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.11, ctx.currentTime + 0.008);
-    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.065);
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start(ctx.currentTime);
-    osc.stop(ctx.currentTime + 0.07);
+    var bodyOsc = ctx.createOscillator();
+    var bodyGain = ctx.createGain();
+    bodyOsc.type = 'triangle';
+    bodyOsc.frequency.setValueAtTime(1650, when);
+    bodyOsc.frequency.exponentialRampToValueAtTime(1100, when + 0.045);
+
+    bodyGain.gain.setValueAtTime(0.001, when);
+    bodyGain.gain.linearRampToValueAtTime(0.9, when + 0.003);
+    bodyGain.gain.exponentialRampToValueAtTime(0.0001, when + 0.075);
+
+    bodyOsc.connect(bodyGain);
+    bodyGain.connect(ctx.destination);
+    bodyOsc.start(when);
+    bodyOsc.stop(when + 0.08);
+
+    var clickOsc = ctx.createOscillator();
+    var clickGain = ctx.createGain();
+    clickOsc.type = 'square';
+    clickOsc.frequency.setValueAtTime(3200, when);
+
+    clickGain.gain.setValueAtTime(0.001, when);
+    clickGain.gain.linearRampToValueAtTime(0.32, when + 0.0015);
+    clickGain.gain.exponentialRampToValueAtTime(0.0001, when + 0.022);
+
+    clickOsc.connect(clickGain);
+    clickGain.connect(ctx.destination);
+    clickOsc.start(when);
+    clickOsc.stop(when + 0.025);
   } catch (e) {}
 }
 
-function syncMetronomeLoop() {
-  clearInterval(metroTimer);
+function shouldMetronomeRun() {
+  if (!state.metroEnabled || state.isResting || state.activeModal) return false;
+  if (document.visibilityState === 'hidden') return false;
   var effectiveType = getEffectiveDayType(state.day);
-  if (state.metroEnabled && !state.isResting && !state.activeModal && (effectiveType === 'routineA' || effectiveType === 'routineB')) {
-    var ms = Math.max(400, Math.round((Number(state.metroIntervalSec) || 1.0) * 1000));
-    metroTimer = setInterval(playMetroTick, ms);
+  return effectiveType === 'routineA' || effectiveType === 'routineB';
+}
+
+function stopMetronomeLoop() {
+  clearInterval(metroTimer);
+  metroTimer = null;
+  metroNextNoteTime = 0;
+  metroLastScheduledTime = 0;
+  stopAudioKeepAlive();
+}
+
+function metroSchedulerTick() {
+  if (!shouldMetronomeRun()) {
+    stopMetronomeLoop();
+    return;
   }
+  var ctx = sharedAudioCtx;
+  if (!ctx || ctx.state !== 'running') return;
+
+  var intervalSec = Math.max(0.4, Number(state.metroIntervalSec) || 1.0);
+  var lookaheadSec = 0.16;
+
+  // Si el contexto estuvo pausado o bloqueado, realinea sin disparar ráfagas acumuladas
+  if (metroNextNoteTime < ctx.currentTime - 0.1) {
+    metroNextNoteTime = ctx.currentTime + 0.04;
+  }
+
+  while (metroNextNoteTime < ctx.currentTime + lookaheadSec) {
+    scheduleMetroTickAt(ctx, metroNextNoteTime);
+    metroLastScheduledTime = metroNextNoteTime;
+    metroNextNoteTime += intervalSec;
+  }
+}
+
+function syncMetronomeLoop(resetPhase) {
+  if (!shouldMetronomeRun()) {
+    stopMetronomeLoop();
+    return;
+  }
+  var ctx = getAudioContext();
+  if (!ctx) return;
+
+  startAudioKeepAlive(ctx);
+
+  var intervalSec = Math.max(0.4, Number(state.metroIntervalSec) || 1.0);
+  if (resetPhase || !metroTimer || metroNextNoteTime < ctx.currentTime) {
+    metroNextNoteTime = metroLastScheduledTime > 0
+      ? Math.max(ctx.currentTime + 0.04, metroLastScheduledTime + intervalSec)
+      : ctx.currentTime + 0.04;
+  }
+
+  if (!metroTimer) {
+    metroTimer = setInterval(metroSchedulerTick, 25);
+  }
+  metroSchedulerTick();
 }
 
 function toggleMetronome() {
   getAudioContext();
   state.metroEnabled = !state.metroEnabled;
   saveState();
-  syncMetronomeLoop();
+  syncMetronomeLoop(true);
   render();
 }
 
@@ -2595,7 +2707,7 @@ function setMetroInterval(sec) {
   getAudioContext();
   state.metroIntervalSec = Number(sec);
   saveState();
-  syncMetronomeLoop();
+  syncMetronomeLoop(true);
   render();
 }
 
@@ -4557,11 +4669,21 @@ window.addEventListener('historyUndo', function(e) {
 
 document.addEventListener('visibilitychange', function() {
   if (document.visibilityState === 'hidden') {
+    stopMetronomeLoop();
     saveState();
   } else if (document.visibilityState === 'visible') {
     syncSessionAfterWake();
+    syncMetronomeLoop(true);
   }
 });
+
+// Desbloquea el audio en el primer toque si el metrónomo ya venía activado al reabrir la app
+document.addEventListener('pointerup', function() {
+  if (shouldMetronomeRun() && (!sharedAudioCtx || sharedAudioCtx.state !== 'running')) {
+    getAudioContext();
+    syncMetronomeLoop(true);
+  }
+}, { passive: true });
 
 window.addEventListener('pagehide', function() {
   saveState();
